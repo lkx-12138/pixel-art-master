@@ -589,6 +589,32 @@ const App = () => {
           )}
         </div>}
       </Card>
+      {/* 悬浮版权标 (Fixed Badge) */}
+      <div style={{
+        position: 'fixed',      // 关键 1：固定定位，脱离文档流
+        bottom: '10px',         // 距离底部 10px
+        right: '10px',          // 距离右边 10px
+        zIndex: 9999,           // 关键 2：层级最高，防止被其他内容遮挡
+        padding: '6px 12px',    // 给点内边距，别太挤
+        background: 'rgba(255, 255, 255, 0.85)', // 半透明白色背景，防止文字和下面的内容混在一起
+        backdropFilter: 'blur(4px)', // (可选) 磨砂玻璃效果，看起来很高级！
+        borderRadius: '6px',    // 圆角
+        boxShadow: '0 2px 10px rgba(0,0,0,0.1)', // 加一点淡淡的阴影，让它飘起来
+        fontSize: '12px',       // 字体小一点，精致
+        color: '#666',
+        textAlign: 'right',     // 文字右对齐
+        pointerEvents: 'auto',  // 允许点击（如果下面有链接的话）
+      }}>
+        <div>
+          Made with ❤️ by
+          <span style={{ color: '#ff4d4f', fontWeight: 'bold', margin: '0 4px' }}>
+            xhs：士多啤梨(拼豆发疯版)
+          </span>
+        </div>
+        <div style={{ transform: 'scale(0.9)', transformOrigin: 'right center', opacity: 0.8 }}>
+          xhs号：95410734438
+        </div>
+      </div>
     </div>
   );
 };
