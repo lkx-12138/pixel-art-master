@@ -5,7 +5,6 @@
   "author": "KaiXuan",                  
   "private": true,
   "homepage": "./",
-  "main": "build/electron.js",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
@@ -13,21 +12,6 @@
     "eject": "react-scripts eject",
     "electron:build": "npm run build && electron-builder --win --x64"
   },
-"build": {
-  "appId": "com.pixelart.app",
-  "productName": "PixelArtLK",
-  "directories": {
-    "output": "dist"
-  },
-  "files": [
-    "build/**/*",      
-    "package.json"
-  ],
-  "win": {
-    "icon": "public/favicon.ico",
-    "target": "nsis"
-  }
-},
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
     "@testing-library/dom": "^10.4.1",
@@ -41,8 +25,6 @@
     "web-vitals": "^2.1.4"
   },
   "devDependencies": {
-    "electron": "^39.2.7",
-    "electron-builder": "^26.0.12"
   },
   "browserslist": {
     "production": [
