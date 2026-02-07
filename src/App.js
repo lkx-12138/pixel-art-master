@@ -10,6 +10,7 @@ import {
   FormatPainterOutlined, EyeOutlined, SwapOutlined,
   PictureOutlined
 } from '@ant-design/icons';
+import { Analytics } from '@vercel/analytics/react';
 import './App.css';
 
 const { Option } = Select;
@@ -615,6 +616,7 @@ const App = () => {
           xhs号：95410734438
         </div>
       </div>
+      <Analytics />
     </div>
   );
 };

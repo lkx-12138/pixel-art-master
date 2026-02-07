@@ -1,8 +1,8 @@
 {
   "name": "pixel-art-master",
   "version": "0.1.0",
-  "description": "一个简单的像素画生成工具",  
-  "author": "KaiXuan",                  
+  "description": "一个简单的像素画生成工具",
+  "author": "KaiXuan",
   "private": true,
   "homepage": "./",
   "scripts": {
@@ -18,13 +18,12 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
     "@testing-library/user-event": "^13.5.0",
+    "@vercel/analytics": "^1.6.1",
     "antd": "^6.1.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-scripts": "5.0.1",
     "web-vitals": "^2.1.4"
-  },
-  "devDependencies": {
   },
   "browserslist": {
     "production": [
