@@ -411,7 +411,7 @@ const App = () => {
     ctx.fillStyle = '#000';
     ctx.font = 'bold 16px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText('色号统计（作者：士多啤梨（拼豆发疯版）小红书号：95410734438）:', padding, statsStartY);
+    ctx.fillText('色号统计:', padding, statsStartY);
 
     let currentX = padding;
     let currentY = statsStartY + 20;
@@ -466,7 +466,7 @@ const App = () => {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f0f2f5', padding: 0 }}>
       <Card
-        title={<span><FormatPainterOutlined /> 拼豆图纸生成器   作者：士多啤梨（拼豆发疯版）小红书号：95410734438</span>}
+        title={<span><FormatPainterOutlined /> 拼豆图纸生成器</span>}
         className="pixel-editor"
         style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', overflow: 'hidden' }}
@@ -593,4 +593,4 @@ const App = () => {
   );
 };
 
-export default App;
+export default App; 
