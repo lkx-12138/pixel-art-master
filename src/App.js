@@ -352,8 +352,8 @@ const App = () => {
     const padding = 20;
 
     const sortedEntries = Object.entries(data.colorCount).sort((a, b) => b[1] - a[1]);
-    const cardWidth = 40;
-    const cardHeight = 52;
+    const cardWidth = 42;
+    const cardHeight = 70;
     const gap = 10;
     const availableWidth = main.width;
     const itemsPerRow = Math.floor(availableWidth / (cardWidth + gap));
@@ -415,9 +415,10 @@ const App = () => {
     ctx.fillText('色号统计ฅ՞•ﻌ•՞ฅ:', padding, statsStartY);
 
     let currentX = padding;
-    let currentY = statsStartY + 20;
+    let currentY = statsStartY + 25;
 
     sortedEntries.forEach(([k, c]) => {
+      const percentage = ((c / data.totalPixels) * 100).toFixed(3) + '%';
       if (currentX + cardWidth > cvs.width - padding) {
         currentX = padding;
         currentY += cardHeight + gap;
@@ -429,7 +430,7 @@ const App = () => {
       ctx.lineWidth = 1;
       ctx.strokeRect(currentX, currentY, cardWidth, cardHeight);
 
-      const colorHalfHeight = cardHeight / 2;
+      const colorHalfHeight = 26;
       ctx.fillStyle = colorMap[k];
       ctx.fillRect(currentX, currentY, cardWidth, colorHalfHeight);
       ctx.beginPath();
@@ -442,15 +443,19 @@ const App = () => {
       const textCenterX = currentX + cardWidth / 2;
 
       ctx.fillStyle = '#333';
-      ctx.font = 'bold 10px Arial';
+      ctx.font = 'bold 11px Arial';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
       ctx.fillText(k, textCenterX, textCenterY);
 
-      ctx.fillStyle = '#888';
-      ctx.font = '9px Arial';
+      ctx.fillStyle = '#666';
+      ctx.font = '10px Arial';
       ctx.textBaseline = 'top';
-      ctx.fillText(`×${c}`, textCenterX, textCenterY);
+      ctx.fillText(`${c}颗`, textCenterX, textCenterY);
+
+      ctx.fillStyle = '#999';
+      ctx.font = '9px Arial';
+      ctx.fillText(percentage, textCenterX, textCenterY + 13);
 
       currentX += cardWidth + gap;
     });
@@ -562,32 +567,36 @@ const App = () => {
           </Spin>
         </div>
 
-        {data && <div style={{ flex: '0 0 auto', marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 150, overflowY: 'auto', paddingRight: 5 }}>
-          {Object.entries(data.colorCount).sort((a, b) => b[1] - a[1]).map(([k, c]) =>
-            <Tooltip key={k} title={`${k}: ${c}颗 (点击定位)`}>
-              <div
-                onClick={() => {
-                  setSelectedColor(k);
-                  setIsHighlightMode(true);
-                }}
-                className="color-palette-item"
-                style={{
-                  width: 40, height: 52,
-                  border: selectedColor === k ? '2px solid #1890ff' : '1px solid #ddd',
-                  borderRadius: 4, overflow: 'hidden', display: 'flex', flexDirection: 'column',
-                  cursor: 'pointer', background: '#fff',
-                  opacity: (isHighlightMode && selectedColor !== k) ? 0.3 : 1,
-                  transition: 'all 0.2s'
-                }}
-              >
-                <div style={{ flex: 1, background: colorMap[k], width: '100%' }} />
-                <div style={{ height: 28, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: 10, background: '#fff', borderTop: '1px solid #eee' }}>
-                  <span style={{ fontWeight: 'bold', color: '#333' }}>{k}</span>
-                  <span style={{ color: '#888', transform: 'scale(0.9)' }}>×{c}</span>
+        {data && <div style={{ flex: '0 0 auto', marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 200, overflowY: 'auto', paddingRight: 5 }}>
+          {Object.entries(data.colorCount).sort((a, b) => b[1] - a[1]).map(([k, c]) => {
+            const percentage = ((c / data.totalPixels) * 100).toFixed(3);
+            return (
+              <Tooltip key={k} title={`${k}: ${c}颗 (${percentage}%) - 点击定位`}>
+                <div
+                  onClick={() => {
+                    setSelectedColor(k);
+                    setIsHighlightMode(true);
+                  }}
+                  className="color-palette-item"
+                  style={{
+                    width: 42, height: 75,
+                    border: selectedColor === k ? '2px solid #1890ff' : '1px solid #ddd',
+                    borderRadius: 4, overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                    cursor: 'pointer', background: '#fff',
+                    opacity: (isHighlightMode && selectedColor !== k) ? 0.3 : 1,
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <div style={{ flex: 1, background: colorMap[k], width: '100%' }} />
+                  <div style={{ height: 48, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: 9, background: '#fff', borderTop: '1px solid #eee' }}>
+                    <span style={{ fontWeight: 'bold', color: '#333', fontSize: 11 }}>{k}</span>
+                    <span style={{ color: '#666', fontSize: 10, fontWeight: 500 }}>×{c}</span>
+                    <span style={{ color: '#999', fontSize: 9, marginTop: 2 }}>{percentage}%</span>
+                  </div>
                 </div>
-              </div>
-            </Tooltip>
-          )}
+              </Tooltip>
+            );
+          })}
         </div>}
       </Card>
       {/* 悬浮版权标 (Fixed Badge) */}
