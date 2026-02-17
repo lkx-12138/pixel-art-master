@@ -15,54 +15,9 @@ import './App.css';
 
 const { Option } = Select;
 
-// --- 颜色映射表 (保持不变) ---
-const colorMap = {
-  "A1": "#FCF4CE", "A2": "#FDFDD7", "A3": "#FDFF93", "A4": "#F7ED5C", "A5": "#F0D73C",
-  "A6": "#FDA951", "A7": "#FD8C50", "A8": "#FDD94F", "A9": "#F99C60", "A10": "#F57D36",
-  "A11": "#FFDB9A", "A12": "#FCA27D", "A13": "#FFC567", "A14": "#F85742", "A15": "#FDF55F",
-  "A16": "#FEFF99", "A17": "#FFE074", "A18": "#FDBD80", "A19": "#FE7D77", "A20": "#FAD66E",
-  "A21": "#FAE393", "A22": "#EEF87A", "A23": "#E2C9BF", "A24": "#F4F4A7", "A25": "#FED785",
-  "A26": "#FFC636", "B1": "#E1F13A", "B2": "#65F344", "B3": "#A1F587", "B4": "#60DF33",
-  "B5": "#39e058", "B6": "#65dfa6", "B7": "#3fae7d", "B8": "#1e9b55", "B9": "#2c5038",
-  "B10": "#9bd1ba", "B11": "#637133", "B12": "#176c3b", "B13": "#cae77f", "B14": "#abe64a",
-  "B15": "#2f5033", "B16": "#bfeb9b", "B17": "#9fb240", "B18": "#eaf9a7", "B19": "#26b58e",
-  "B20": "#c8eccf", "B21": "#19616a", "B22": "#0a3f40", "B23": "#363b1b", "B24": "#eaf9a7",
-  "B25": "#4d816e", "B26": "#8e7a34", "B27": "#d1deae", "B28": "#9de4bc", "B29": "#c6de61",
-  "B30": "#e2fbb1", "B31": "#b4e492", "B32": "#92ab5f", "C1": "#edffe6", "C2": "#abf8fe",
-  "C3": "#9ee0f8", "C4": "#44cdfb", "C5": "#06abe3", "C6": "#54a7e9", "C7": "#3977cc",
-  "C8": "#0f52bd", "C9": "#3dbbe3", "C10": "#3dbae3", "C11": "#28dfd3", "C12": "#1b334e",
-  "C13": "#cde6fe", "C14": "#d9fcfc", "C15": "#21c6c2", "C16": "#1957a0", "C17": "#00d2f1",
-  "C18": "#00d2f1", "C19": "#1a849d", "C20": "#1771a8", "C21": "#beddfc", "C22": "#6bb1bc",
-  "C23": "#c8e1fa", "C24": "#7fc5f9", "C25": "#a7e8e0", "C26": "#41adcf", "C27": "#d0def9",
-  "C28": "#bdcde7", "C29": "#39478d", "D1": "#adb6ec", "D2": "#848ed2", "D3": "#3354ae",
-  "D4": "#142d7b", "D5": "#b44ec9", "D6": "#b47ade", "D7": "#8757a8", "D8": "#e7cffe",
-  "D9": "#d5b9f4", "D10": "#301a48", "D11": "#beb7e2", "D12": "#d99acf", "D13": "#b5028c",
-  "D14": "#842a94", "D15": "#2f1f8a", "D16": "#e1e3f0", "D17": "#c6d3fa", "D18": "#9b64b8",
-  "D19": "#d7c2db", "D20": "#9b33b2", "D21": "#940595", "D22": "#3c3599", "D23": "#ebdaf8",
-  "D24": "#7689e0", "D25": "#4b4fc1", "D26": "#d4c7e7", "E1": "#f6d3cc", "E2": "#fcc1dd",
-  "E3": "#f2c0e5", "E4": "#e5649f", "E5": "#e10328", "E6": "#e94074", "E7": "#c63574",
-  "E8": "#fbdbec", "E9": "#e575c5", "E10": "#d33a94", "E11": "#f6dad2", "E12": "#f594bf",
-  "E13": "#b5016b", "E14": "#f9d4bd", "E15": "#f7c6cb", "E16": "#fbf4ec", "E17": "#f7e2e9",
-  "E18": "#f1cbd6", "E19": "#f8bad1", "E20": "#f2bcd0", "E21": "#be9ca5", "E22": "#b789a0",
-  "E23": "#927c89", "E24": "#debde7", "F1": "#fe9281", "F2": "#f63d4b", "F3": "#ed4e3c",
-  "F4": "#fb2a40", "F5": "#e10328", "F6": "#913533", "F7": "#911932", "F8": "#bb0126",
-  "F9": "#e1667a", "F10": "#854724", "F11": "#5a2224", "F12": "#ef546e", "F13": "#f55b45",
-  "F14": "#f7adb8", "F15": "#d70224", "F16": "#f8c0a6", "F17": "#e59c7f", "F18": "#d17d48",
-  "F19": "#c04448", "F20": "#c69496", "F21": "#f3b8c4", "F22": "#f5c3d2", "F23": "#e98171",
-  "F24": "#de9dad", "F25": "#ec4455", "G1": "#ffe4d3", "G2": "#fcc6ac", "G3": "#f0c4a5",
-  "G4": "#dcb387", "G5": "#e7b34e", "G6": "#e2a011", "G7": "#985c3a", "G8": "#713d2f",
-  "G9": "#e2b685", "G10": "#da8c42", "G11": "#dbc899", "G12": "#ffca94", "G13": "#b1704a",
-  "G14": "#8b664c", "G15": "#f6f8e3", "G16": "#f2d8c1", "G17": "#77544e", "G18": "#ffe3d5",
-  "G19": "#dd7d41", "G20": "#a54430", "G21": "#b28460", "H1": "RGBA(0, 0, 0, 0)",
-  "H2": "#ffffff", "H3": "#b3b4b4", "H4": "#878787", "H5": "#454547", "H6": "#2c2c2c",
-  "H7": "#010001", "H8": "#e6d5dd", "H9": "#efedee", "H10": "#ebebeb", "H11": "#cdcdcd",
-  "H12": "#faf4ef", "H13": "#f5edd1", "H14": "#cdd7d4", "H15": "#9aa6a6", "H16": "#1a1311",
-  "H17": "#efeeef", "H18": "#fcfff6", "H19": "#f2eee5", "H20": "#96a09e", "H21": "#f8fce5",
-  "H22": "#c9cbd4", "H23": "#9b9c94", "M1": "#b9c7b6", "M2": "#909994", "M3": "#677f81",
-  "M4": "#dfd4b9", "M5": "#d1cbb0", "M6": "#b0a988", "M7": "#b1a796", "M8": "#ac8182",
-  "M9": "#a78765", "M10": "#c3b2ba", "M11": "#9d7492", "M12": "#664a52", "M13": "#c69260",
-  "M14": "#c47266", "M15": "#6f7b7b"
-};
+// --- 颜色映射表 ---
+const _cData = "A1:#FCF4CE|A2:#FDFDD7|A3:#FDFF93|A4:#F7ED5C|A5:#F0D73C|A6:#FDA951|A7:#FD8C50|A8:#FDD94F|A9:#F99C60|A10:#F57D36|A11:#FFDB9A|A12:#FCA27D|A13:#FFC567|A14:#F85742|A15:#FDF55F|A16:#FEFF99|A17:#FFE074|A18:#FDBD80|A19:#FE7D77|A20:#FAD66E|A21:#FAE393|A22:#EEF87A|A23:#E2C9BF|A24:#F4F4A7|A25:#FED785|A26:#FFC636|B1:#E1F13A|B2:#65F344|B3:#A1F587|B4:#60DF33|B5:#39e058|B6:#65dfa6|B7:#3fae7d|B8:#1e9b55|B9:#2c5038|B10:#9bd1ba|B11:#637133|B12:#176c3b|B13:#cae77f|B14:#abe64a|B15:#2f5033|B16:#bfeb9b|B17:#9fb240|B18:#eaf9a7|B19:#26b58e|B20:#c8eccf|B21:#19616a|B22:#0a3f40|B23:#363b1b|B24:#eaf9a7|B25:#4d816e|B26:#8e7a34|B27:#d1deae|B28:#9de4bc|B29:#c6de61|B30:#e2fbb1|B31:#b4e492|B32:#92ab5f|C1:#edffe6|C2:#abf8fe|C3:#9ee0f8|C4:#44cdfb|C5:#06abe3|C6:#54a7e9|C7:#3977cc|C8:#0f52bd|C9:#3dbbe3|C10:#3dbae3|C11:#28dfd3|C12:#1b334e|C13:#cde6fe|C14:#d9fcfc|C15:#21c6c2|C16:#1957a0|C17:#00d2f1|C18:#00d2f1|C19:#1a849d|C20:#1771a8|C21:#beddfc|C22:#6bb1bc|C23:#c8e1fa|C24:#7fc5f9|C25:#a7e8e0|C26:#41adcf|C27:#d0def9|C28:#bdcde7|C29:#39478d|D1:#adb6ec|D2:#848ed2|D3:#3354ae|D4:#142d7b|D5:#b44ec9|D6:#b47ade|D7:#8757a8|D8:#e7cffe|D9:#d5b9f4|D10:#301a48|D11:#beb7e2|D12:#d99acf|D13:#b5028c|D14:#842a94|D15:#2f1f8a|D16:#e1e3f0|D17:#c6d3fa|D18:#9b64b8|D19:#d7c2db|D20:#9b33b2|D21:#940595|D22:#3c3599|D23:#ebdaf8|D24:#7689e0|D25:#4b4fc1|D26:#d4c7e7|E1:#f6d3cc|E2:#fcc1dd|E3:#f2c0e5|E4:#e5649f|E5:#e10328|E6:#e94074|E7:#c63574|E8:#fbdbec|E9:#e575c5|E10:#d33a94|E11:#f6dad2|E12:#f594bf|E13:#b5016b|E14:#f9d4bd|E15:#f7c6cb|E16:#fbf4ec|E17:#f7e2e9|E18:#f1cbd6|E19:#f8bad1|E20:#f2bcd0|E21:#be9ca5|E22:#b789a0|E23:#927c89|E24:#debde7|F1:#fe9281|F2:#f63d4b|F3:#ed4e3c|F4:#fb2a40|F5:#e10328|F6:#913533|F7:#911932|F8:#bb0126|F9:#e1667a|F10:#854724|F11:#5a2224|F12:#ef546e|F13:#f55b45|F14:#f7adb8|F15:#d70224|F16:#f8c0a6|F17:#e59c7f|F18:#d17d48|F19:#c04448|F20:#c69496|F21:#f3b8c4|F22:#f5c3d2|F23:#e98171|F24:#de9dad|F25:#ec4455|G1:#ffe4d3|G2:#fcc6ac|G3:#f0c4a5|G4:#dcb387|G5:#e7b34e|G6:#e2a011|G7:#985c3a|G8:#713d2f|G9:#e2b685|G10:#da8c42|G11:#dbc899|G12:#ffca94|G13:#b1704a|G14:#8b664c|G15:#f6f8e3|G16:#f2d8c1|G17:#77544e|G18:#ffe3d5|G19:#dd7d41|G20:#a54430|G21:#b28460|H1:RGBA(0, 0, 0, 0)|H2:#ffffff|H3:#b3b4b4|H4:#878787|H5:#454547|H6:#2c2c2c|H7:#010001|H8:#e6d5dd|H9:#efedee|H10:#ebebeb|H11:#cdcdcd|H12:#faf4ef|H13:#f5edd1|H14:#cdd7d4|H15:#9aa6a6|H16:#1a1311|H17:#efeeef|H18:#fcfff6|H19:#f2eee5|H20:#96a09e|H21:#f8fce5|H22:#c9cbd4|H23:#9b9c94|M1:#b9c7b6|M2:#909994|M3:#677f81|M4:#dfd4b9|M5:#d1cbb0|M6:#b0a988|M7:#b1a796|M8:#ac8182|M9:#a78765|M10:#c3b2ba|M11:#9d7492|M12:#664a52|M13:#c69260|M14:#c47266|M15:#6f7b7b";
+const colorMap = (_cData.split('|').reduce((a, b) => { const [k, v] = b.split(':'); a[k] = v; return a }, {}));
 
 const hexToRgb = (hex) => {
   if (!hex || hex.toLowerCase().includes('rgba')) return { r: 255, g: 255, b: 255 };
@@ -451,7 +406,7 @@ const App = () => {
       ctx.fillStyle = '#666';
       ctx.font = '10px Arial';
       ctx.textBaseline = 'top';
-      ctx.fillText(`${c}颗`, textCenterX, textCenterY);
+      ctx.fillText(`×${c}`, textCenterX, textCenterY);
 
       ctx.fillStyle = '#999';
       ctx.font = '9px Arial';
