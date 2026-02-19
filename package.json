@@ -1,8 +1,9 @@
 {
   "name": "pixel-art-master",
   "version": "0.1.0",
-  "description": "一个简单的像素画生成工具",
+  "description": "拼豆图纸生成器 - 将图片转换为像素画/拼豆图纸",
   "author": "KaiXuan",
+  "license": "MIT",
   "private": true,
   "homepage": "./",
   "scripts": {

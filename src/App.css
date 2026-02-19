@@ -26,3 +26,122 @@
   z-index: 10;
   box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
+
+/* 移动端适配 */
+@media screen and (max-width: 768px) {
+  /* 隐藏版权信息 */
+  .copyright-badge {
+    display: none !important;
+  }
+
+  /* 控制面板调整 */
+  .control-panel {
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+
+  /* 按钮组调整 */
+  .ant-space {
+    flex-wrap: wrap;
+  }
+
+  /* 工具栏调整 */
+  .ant-radio-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .ant-radio-button-wrapper {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  /* 输入框调整 */
+  .ant-input-number {
+    width: 90px !important;
+  }
+
+  .ant-input-number-input {
+    font-size: 14px;
+  }
+
+  /* Canvas容器调整 */
+  .canvas-container {
+    min-height: 300px;
+  }
+
+  /* 色卡区域调整 */
+  .ant-card-body > div[style*="flex: '0 0 auto'"][style*="marginTop: 12"] {
+    max-height: 120px;
+    padding: 0 8px;
+  }
+
+  /* 色卡大小调整 */
+  .color-palette-item {
+    width: 36px !important;
+    height: 64px !important;
+  }
+
+  /* 滑块调整 */
+  .ant-slider {
+    width: 80px !important;
+  }
+
+  /* 卡片标题调整 */
+  .ant-card-head-title {
+    font-size: 14px;
+    padding: 12px 0;
+  }
+
+  /* 隐藏部分分隔线 */
+  .ant-divider-horizontal {
+    margin: 8px 0;
+  }
+
+  /* 按钮大小调整 */
+  .ant-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .ant-btn-sm {
+    padding: 0 6px;
+    font-size: 11px;
+  }
+}
+
+/* 小屏手机适配 */
+@media screen and (max-width: 480px) {
+  /* 控制面板进一步调整 */
+  .control-panel {
+    padding: 6px;
+  }
+
+  /* 色卡更小 */
+  .color-palette-item {
+    width: 32px !important;
+    height: 56px !important;
+  }
+
+  /* 按钮更紧凑 */
+  .ant-btn {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+
+  .ant-radio-button-wrapper {
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  /* 输入框更小 */
+  .ant-input-number {
+    width: 80px !important;
+  }
+
+  /* 色卡区域更小 */
+  .ant-card-body > div[style*="flex: '0 0 auto'"][style*="marginTop: 12"] {
+    max-height: 100px;
+  }
+}

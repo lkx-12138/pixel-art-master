@@ -216,8 +216,11 @@ const App = () => {
     const rect = canvasRef.current.getBoundingClientRect();
     const scaleX = canvasRef.current.width / rect.width;
     const scaleY = canvasRef.current.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
+    // 兼容鼠标和触摸事件
+    const clientX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
+    const clientY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
     const { leftMargin, topMargin, cellSize, rows, cols } = data.canvasConfig;
 
     if (x < leftMargin || y < topMargin) return;
@@ -433,54 +436,55 @@ const App = () => {
         bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', overflow: 'hidden' }}
       >
         <div style={{ flex: '0 0 auto' }}>
-          <Space wrap className="control-panel">
+          <Space wrap className="control-panel" style={{ width: '100%' }}>
             <Upload accept="image/*" beforeUpload={f => { const r = new FileReader(); r.onload = e => setImageSrc(e.target.result); r.readAsDataURL(f); return false; }} showUploadList={false}>
-              <Button type="primary" icon={<UploadOutlined />}>上传图片</Button>
+              <Button type="primary" icon={<UploadOutlined />}>上传</Button>
             </Upload>
-            <InputNumber addonBefore="宽度" min={10} max={200} value={cols} onChange={setCols} style={{ width: 130 }} />
-            <InputNumber addonBefore="过滤%" min={0} max={20} value={filterThreshold} onChange={setFilterThreshold} style={{ width: 120 }} />
+            <InputNumber addonBefore="宽" min={10} max={200} value={cols} onChange={setCols} style={{ width: 100 }} />
+            <InputNumber addonBefore="过滤" min={0} max={20} value={filterThreshold} onChange={setFilterThreshold} style={{ width: 90 }} />
             <Button icon={<FilterOutlined />} onClick={filterColors} disabled={!data}>优化</Button>
             <Button icon={<SwapOutlined />} onClick={handleMirror} disabled={!data}>镜像</Button>
             <Button type="primary" ghost icon={<DownloadOutlined />} onClick={saveImage} disabled={!data}>导出</Button>
           </Space>
 
-          <Divider style={{ margin: '12px 0' }} />
+          <Divider style={{ margin: '8px 0' }} />
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <Space>
-              <Radio.Group value={currentTool} onChange={e => setCurrentTool(e.target.value)} buttonStyle="solid">
-                <Radio.Button value="pen"><EditOutlined /> 画笔</Radio.Button>
-                <Radio.Button value="bucket"><BgColorsOutlined /> 填充</Radio.Button>
-                <Radio.Button value="dropper"><FormatPainterOutlined /> 吸管</Radio.Button>
-              </Radio.Group>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <Space wrap size={4}>
+                <Radio.Group value={currentTool} onChange={e => setCurrentTool(e.target.value)} buttonStyle="solid" size="small">
+                  <Radio.Button value="pen"><EditOutlined /> 画笔</Radio.Button>
+                  <Radio.Button value="bucket"><BgColorsOutlined /> 填充</Radio.Button>
+                  <Radio.Button value="dropper"><FormatPainterOutlined /> 吸管</Radio.Button>
+                </Radio.Group>
 
-              <Tooltip title={isHighlightMode ? "关闭颜色定位" : "开启颜色定位：只高亮显示当前选中的颜色"}>
                 <Button
                   type={isHighlightMode ? "primary" : "default"}
                   icon={<EyeOutlined />}
                   onClick={() => setIsHighlightMode(!isHighlightMode)}
                   danger={isHighlightMode}
+                  size="small"
                 >
-                  {isHighlightMode ? "定位中..." : "颜色定位"}
+                  {isHighlightMode ? "定位中" : "定位"}
                 </Button>
-              </Tooltip>
 
-              <Divider type="vertical" />
-              <Button icon={<UndoOutlined />} onClick={handleUndo} disabled={!history.length} />
-              <Button icon={<RedoOutlined />} onClick={handleRedo} disabled={!redoStack.length} />
-              <Space>
-                <ZoomOutOutlined onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.1))} />
-                <Slider min={0.5} max={3} step={0.1} value={zoomLevel} onChange={setZoomLevel} style={{ width: 100 }} />
-                <ZoomInOutlined onClick={() => setZoomLevel(z => Math.min(3, z + 0.1))} />
+                <Button icon={<UndoOutlined />} onClick={handleUndo} disabled={!history.length} size="small" />
+                <Button icon={<RedoOutlined />} onClick={handleRedo} disabled={!redoStack.length} size="small" />
               </Space>
-            </Space>
 
-            <Space>
-              <div style={{ width: 32, height: 32, background: colorMap[selectedColor], border: '1px solid #ddd' }} />
-              <Select showSearch value={selectedColor} onChange={setSelectedColor} style={{ width: 120 }} filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}>
+              <Space size={4}>
+                <ZoomOutOutlined style={{ fontSize: 14, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.1))} />
+                <Slider min={0.5} max={3} step={0.1} value={zoomLevel} onChange={setZoomLevel} style={{ width: 80 }} />
+                <ZoomInOutlined style={{ fontSize: 14, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.min(3, z + 0.1))} />
+              </Space>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+              <div style={{ width: 24, height: 24, background: colorMap[selectedColor], border: '1px solid #ddd', borderRadius: 2 }} />
+              <Select showSearch value={selectedColor} onChange={setSelectedColor} style={{ width: 100 }} size="small" filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}>
                 {sortedKeys.map(k => <Option key={k} value={k} label={k}><Space><div style={{ width: 10, height: 10, background: colorMap[k] }} />{k}</Space></Option>)}
               </Select>
-            </Space>
+            </div>
           </div>
         </div>
 
@@ -496,12 +500,16 @@ const App = () => {
                     transformOrigin: 'top left',
                     transition: 'transform 0.1s',
                     boxShadow: '0 0 10px rgba(0,0,0,0.1)',
-                    display: 'block'
+                    display: 'block',
+                    touchAction: 'none'
                   }}
                   onMouseDown={e => { setIsDrawing(true); handleCanvasAction(e, true); }}
                   onMouseMove={e => isDrawing && handleCanvasAction(e, false)}
                   onMouseUp={() => setIsDrawing(false)}
                   onMouseLeave={() => setIsDrawing(false)}
+                  onTouchStart={e => { e.preventDefault(); const touch = e.touches[0]; handleCanvasAction(touch, true); setIsDrawing(true); }}
+                  onTouchMove={e => { e.preventDefault(); if (isDrawing) { const touch = e.touches[0]; handleCanvasAction(touch, false); } }}
+                  onTouchEnd={() => setIsDrawing(false)}
                 />
               </div>
             ) : (
@@ -554,21 +562,21 @@ const App = () => {
           })}
         </div>}
       </Card>
-      {/* 悬浮版权标 (Fixed Badge) */}
-      <div style={{
-        position: 'fixed',      // 关键 1：固定定位，脱离文档流
-        bottom: '10px',         // 距离底部 10px
-        right: '10px',          // 距离右边 10px
-        zIndex: 9999,           // 关键 2：层级最高，防止被其他内容遮挡
-        padding: '6px 12px',    // 给点内边距，别太挤
-        background: 'rgba(255, 255, 255, 0.85)', // 半透明白色背景，防止文字和下面的内容混在一起
-        backdropFilter: 'blur(4px)', // (可选) 磨砂玻璃效果，看起来很高级！
-        borderRadius: '6px',    // 圆角
-        boxShadow: '0 2px 10px rgba(0,0,0,0.1)', // 加一点淡淡的阴影，让它飘起来
-        fontSize: '12px',       // 字体小一点，精致
+      {/* 悬浮版权标 (Fixed Badge) - 移动端隐藏 */}
+      <div className="copyright-badge" style={{
+        position: 'fixed',
+        bottom: '10px',
+        right: '10px',
+        zIndex: 9999,
+        padding: '6px 12px',
+        background: 'rgba(255, 255, 255, 0.85)',
+        backdropFilter: 'blur(4px)',
+        borderRadius: '6px',
+        boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+        fontSize: '12px',
         color: '#666',
-        textAlign: 'right',     // 文字右对齐
-        pointerEvents: 'auto',  // 允许点击（如果下面有链接的话）
+        textAlign: 'right',
+        pointerEvents: 'auto',
       }}>
         <div>
           Made with ❤️ by

@@ -1,6 +1,7 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "拼豆图纸",
+  "name": "拼豆图纸生成器",
+  "description": "一个简单的像素画/拼豆图纸生成工具",
   "icons": [
     {
       "src": "favicon.ico",
@@ -20,6 +21,6 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#000000",
+  "theme_color": "#1890ff",
   "background_color": "#ffffff"
 }
