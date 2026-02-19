@@ -436,7 +436,6 @@ const App = () => {
     let currentY = statsStartY + 25;
 
     sortedEntries.forEach(([k, c]) => {
-      const percentage = ((c / data.totalPixels) * 100).toFixed(1) + '%';
       if (currentX + cardWidth > cvs.width - padding) {
         currentX = padding;
         currentY += cardHeight + gap;
@@ -470,10 +469,6 @@ const App = () => {
       ctx.font = '10px Arial';
       ctx.textBaseline = 'top';
       ctx.fillText(`×${c}`, textCenterX, textCenterY);
-
-      ctx.fillStyle = '#999';
-      ctx.font = '9px Arial';
-      ctx.fillText(percentage, textCenterX, textCenterY + 13);
 
       currentX += cardWidth + gap;
     });
@@ -588,7 +583,8 @@ const App = () => {
 
         {data && <div className="color-palette-area" style={{ flex: '0 0 auto', marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 150, overflowY: 'auto', paddingRight: 4 }}>
           {Object.entries(data.colorCount).sort((a, b) => b[1] - a[1]).map(([k, c]) => {
-            const percentage = ((c / data.totalPixels) * 100).toFixed(1);
+            const pct = (c / data.totalPixels) * 100;
+            const percentage = pct < 0.1 ? pct.toFixed(3) : pct.toFixed(1);
             return (
               <Tooltip key={k} title={`${k}: ${c}颗 (${percentage}%) - 点击定位`}>
                 <div
