@@ -131,6 +131,14 @@ const App = () => {
         pixelData, colorCount, totalPixels: rows * cols,
         canvasConfig: { rows, cols, cellSize, leftMargin, topMargin, width: leftMargin + cols * cellSize + 20, height: topMargin + rows * cellSize + 40 }
       });
+
+      // 移动端自动调整缩放比例
+      const canvasWidth = leftMargin + cols * cellSize + 20;
+      const screenWidth = window.innerWidth - 20;
+      if (screenWidth < 768 && canvasWidth > screenWidth) {
+        setZoomLevel(Math.max(0.3, screenWidth / canvasWidth));
+      }
+
       setLoading(false);
     };
   }, [imageSrc, cols]);
@@ -436,60 +444,56 @@ const App = () => {
         bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', overflow: 'hidden' }}
       >
         <div style={{ flex: '0 0 auto' }}>
-          <Space wrap className="control-panel" style={{ width: '100%' }}>
+          <Space wrap className="control-panel" style={{ width: '100%', gap: 4 }}>
             <Upload accept="image/*" beforeUpload={f => { const r = new FileReader(); r.onload = e => setImageSrc(e.target.result); r.readAsDataURL(f); return false; }} showUploadList={false}>
-              <Button type="primary" icon={<UploadOutlined />}>上传</Button>
+              <Button type="primary" icon={<UploadOutlined />} size="small">上传</Button>
             </Upload>
-            <InputNumber addonBefore="宽" min={10} max={200} value={cols} onChange={setCols} style={{ width: 100 }} />
-            <InputNumber addonBefore="过滤" min={0} max={20} value={filterThreshold} onChange={setFilterThreshold} style={{ width: 90 }} />
-            <Button icon={<FilterOutlined />} onClick={filterColors} disabled={!data}>优化</Button>
-            <Button icon={<SwapOutlined />} onClick={handleMirror} disabled={!data}>镜像</Button>
-            <Button type="primary" ghost icon={<DownloadOutlined />} onClick={saveImage} disabled={!data}>导出</Button>
+            <InputNumber addonBefore="宽" min={10} max={200} value={cols} onChange={setCols} size="small" />
+            <InputNumber addonBefore="过滤" min={0} max={20} value={filterThreshold} onChange={setFilterThreshold} size="small" />
+            <Button icon={<FilterOutlined />} onClick={filterColors} disabled={!data} size="small">优化</Button>
+            <Button icon={<SwapOutlined />} onClick={handleMirror} disabled={!data} size="small">镜像</Button>
+            <Button type="primary" ghost icon={<DownloadOutlined />} onClick={saveImage} disabled={!data} size="small">导出</Button>
           </Space>
 
-          <Divider style={{ margin: '8px 0' }} />
+          <Divider style={{ margin: '6px 0' }} />
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <Space wrap size={4}>
-                <Radio.Group value={currentTool} onChange={e => setCurrentTool(e.target.value)} buttonStyle="solid" size="small">
-                  <Radio.Button value="pen"><EditOutlined /> 画笔</Radio.Button>
-                  <Radio.Button value="bucket"><BgColorsOutlined /> 填充</Radio.Button>
-                  <Radio.Button value="dropper"><FormatPainterOutlined /> 吸管</Radio.Button>
-                </Radio.Group>
+          <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+            <Space wrap size={2}>
+              <Radio.Group value={currentTool} onChange={e => setCurrentTool(e.target.value)} buttonStyle="solid" size="small">
+                <Radio.Button value="pen"><EditOutlined /> 画笔</Radio.Button>
+                <Radio.Button value="bucket"><BgColorsOutlined /> 填充</Radio.Button>
+                <Radio.Button value="dropper"><FormatPainterOutlined /> 吸管</Radio.Button>
+              </Radio.Group>
 
-                <Button
-                  type={isHighlightMode ? "primary" : "default"}
-                  icon={<EyeOutlined />}
-                  onClick={() => setIsHighlightMode(!isHighlightMode)}
-                  danger={isHighlightMode}
-                  size="small"
-                >
-                  {isHighlightMode ? "定位中" : "定位"}
-                </Button>
+              <Button
+                type={isHighlightMode ? "primary" : "default"}
+                icon={<EyeOutlined />}
+                onClick={() => setIsHighlightMode(!isHighlightMode)}
+                danger={isHighlightMode}
+                size="small"
+              >
+                {isHighlightMode ? "定位中" : "定位"}
+              </Button>
 
-                <Button icon={<UndoOutlined />} onClick={handleUndo} disabled={!history.length} size="small" />
-                <Button icon={<RedoOutlined />} onClick={handleRedo} disabled={!redoStack.length} size="small" />
-              </Space>
+              <Button icon={<UndoOutlined />} onClick={handleUndo} disabled={!history.length} size="small" />
+              <Button icon={<RedoOutlined />} onClick={handleRedo} disabled={!redoStack.length} size="small" />
+            </Space>
 
-              <Space size={4}>
-                <ZoomOutOutlined style={{ fontSize: 14, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.1))} />
-                <Slider min={0.5} max={3} step={0.1} value={zoomLevel} onChange={setZoomLevel} style={{ width: 80 }} />
-                <ZoomInOutlined style={{ fontSize: 14, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.min(3, z + 0.1))} />
-              </Space>
-            </div>
+            <Space size={2} align="center">
+              <ZoomOutOutlined style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.max(0.3, z - 0.1))} />
+              <Slider min={0.3} max={2} step={0.1} value={zoomLevel} onChange={setZoomLevel} style={{ width: 60 }} />
+              <ZoomInOutlined style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.min(2, z + 0.1))} />
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-              <div style={{ width: 24, height: 24, background: colorMap[selectedColor], border: '1px solid #ddd', borderRadius: 2 }} />
-              <Select showSearch value={selectedColor} onChange={setSelectedColor} style={{ width: 100 }} size="small" filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}>
+              <div style={{ width: 20, height: 20, background: colorMap[selectedColor], border: '1px solid #ddd', borderRadius: 2 }} />
+              <Select showSearch value={selectedColor} onChange={setSelectedColor} style={{ width: 80 }} size="small" filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}>
                 {sortedKeys.map(k => <Option key={k} value={k} label={k}><Space><div style={{ width: 10, height: 10, background: colorMap[k] }} />{k}</Space></Option>)}
               </Select>
-            </div>
+            </Space>
           </div>
         </div>
 
         <div className={imageSrc ? "canvas-container" : "canvas-container noData"}
-          style={{ flex: 1, overflow: 'auto', display: 'flex', position: 'relative', border: '1px solid #f0f0f0', background: '#888' }}>
+          style={{ flex: 1, minHeight: 200, overflow: 'auto', display: 'flex', position: 'relative', border: '1px solid #f0f0f0', background: '#888' }}>
           <Spin spinning={loading} style={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             {data ? (
               <div style={{ margin: 'auto' }}>
@@ -530,7 +534,7 @@ const App = () => {
           </Spin>
         </div>
 
-        {data && <div style={{ flex: '0 0 auto', marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 200, overflowY: 'auto', paddingRight: 5 }}>
+        {data && <div className="color-palette-area" style={{ flex: '0 0 auto', marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 150, overflowY: 'auto', paddingRight: 4 }}>
           {Object.entries(data.colorCount).sort((a, b) => b[1] - a[1]).map(([k, c]) => {
             const percentage = ((c / data.totalPixels) * 100).toFixed(3);
             return (
