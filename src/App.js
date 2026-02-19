@@ -68,6 +68,8 @@ const App = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [isHighlightMode, setIsHighlightMode] = useState(false);
   const canvasRef = useRef(null);
+  const lastTouchDistRef = useRef(null);
+  const initialZoomRef = useRef(1);
 
   // --- 优化2：重构图片处理逻辑 ---
   const processImage = useCallback(async () => {
@@ -218,6 +220,56 @@ const App = () => {
   const saveHistory = () => { if (data) { setHistory(p => [...p.slice(-19), JSON.parse(JSON.stringify(data))]); setRedoStack([]); } };
   const handleUndo = () => { if (history.length) { setRedoStack(p => [data, ...p]); setData(history[history.length - 1]); setHistory(p => p.slice(0, -1)); } };
   const handleRedo = () => { if (redoStack.length) { setHistory(p => [...p, data]); setData(redoStack[0]); setRedoStack(p => p.slice(1)); } };
+
+  // 双指缩放处理
+  const getTouchDistance = (touches) => {
+    if (touches.length < 2) return 0;
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      // 双指按下，记录初始距离和缩放
+      lastTouchDistRef.current = getTouchDistance(e.touches);
+      initialZoomRef.current = zoomLevel;
+      e.preventDefault();
+    } else if (e.touches.length === 1) {
+      // 单指按下，开始绘制
+      const touch = e.touches[0];
+      handleCanvasAction(touch, true);
+      setIsDrawing(true);
+      e.preventDefault();
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2) {
+      // 双指移动，进行缩放
+      const currentDist = getTouchDistance(e.touches);
+      if (lastTouchDistRef.current && lastTouchDistRef.current > 0) {
+        const scale = currentDist / lastTouchDistRef.current;
+        const newZoom = Math.max(0.3, Math.min(2, initialZoomRef.current * scale));
+        setZoomLevel(newZoom);
+      }
+      e.preventDefault();
+    } else if (e.touches.length === 1 && isDrawing) {
+      // 单指移动，进行绘制
+      const touch = e.touches[0];
+      handleCanvasAction(touch, false);
+      e.preventDefault();
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (e.touches.length < 2) {
+      lastTouchDistRef.current = null;
+    }
+    if (e.touches.length === 0) {
+      setIsDrawing(false);
+    }
+  };
 
   const handleCanvasAction = (e, isClick) => {
     if (!data || !canvasRef.current) return;
@@ -511,9 +563,9 @@ const App = () => {
                   onMouseMove={e => isDrawing && handleCanvasAction(e, false)}
                   onMouseUp={() => setIsDrawing(false)}
                   onMouseLeave={() => setIsDrawing(false)}
-                  onTouchStart={e => { e.preventDefault(); const touch = e.touches[0]; handleCanvasAction(touch, true); setIsDrawing(true); }}
-                  onTouchMove={e => { e.preventDefault(); if (isDrawing) { const touch = e.touches[0]; handleCanvasAction(touch, false); } }}
-                  onTouchEnd={() => setIsDrawing(false)}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
                 />
               </div>
             ) : (
