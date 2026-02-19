@@ -436,7 +436,7 @@ const App = () => {
     let currentY = statsStartY + 25;
 
     sortedEntries.forEach(([k, c]) => {
-      const percentage = ((c / data.totalPixels) * 100).toFixed(3) + '%';
+      const percentage = ((c / data.totalPixels) * 100).toFixed(1) + '%';
       if (currentX + cardWidth > cvs.width - padding) {
         currentX = padding;
         currentY += cardHeight + gap;
