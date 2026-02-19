@@ -588,7 +588,7 @@ const App = () => {
 
         {data && <div className="color-palette-area" style={{ flex: '0 0 auto', marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 150, overflowY: 'auto', paddingRight: 4 }}>
           {Object.entries(data.colorCount).sort((a, b) => b[1] - a[1]).map(([k, c]) => {
-            const percentage = ((c / data.totalPixels) * 100).toFixed(3);
+            const percentage = ((c / data.totalPixels) * 100).toFixed(1);
             return (
               <Tooltip key={k} title={`${k}: ${c}颗 (${percentage}%) - 点击定位`}>
                 <div
