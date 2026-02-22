@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Upload, Button, InputNumber, message, Card,
-  Divider, Tooltip, Select, Space, Radio, Spin, Slider
+  Divider, Tooltip, Select, Space, Radio, Spin, Slider, Modal // 新增 Modal
 } from 'antd';
 import {
   UploadOutlined, DownloadOutlined, FilterOutlined,
   EditOutlined, BgColorsOutlined, UndoOutlined,
   RedoOutlined, ZoomInOutlined, ZoomOutOutlined,
   FormatPainterOutlined, EyeOutlined, SwapOutlined,
-  PictureOutlined
+  PictureOutlined, RetweetOutlined, SwapRightOutlined // 新增两个 Icon
 } from '@ant-design/icons';
 import { Analytics } from '@vercel/analytics/react';
 import './App.css';
@@ -31,13 +31,11 @@ const colorMapRgb = Object.entries(colorMap).reduce((acc, [key, hex]) => {
 }, {});
 
 // --- 优化1：使用 Redmean 算法替代标准欧几里得距离 ---
-// 这个算法更符合人眼对色彩的感知（对绿色更敏感）
 const colorDistance = (rgb1, rgb2) => {
   const rmean = (rgb1.r + rgb2.r) / 2;
   const r = rgb1.r - rgb2.r;
   const g = rgb1.g - rgb2.g;
   const b = rgb1.b - rgb2.b;
-  // 核心公式：加权平方和
   return Math.sqrt((((512 + rmean) * r * r) >> 8) + 4 * g * g + (((767 - rmean) * b * b) >> 8));
 };
 
@@ -45,7 +43,7 @@ const findClosestColorKey = (targetRgb) => {
   let minDist = Infinity;
   let closestKey = 'H2';
   for (const [key, rgb] of Object.entries(colorMapRgb)) {
-    if (key === 'H1') continue; // 跳过透明色
+    if (key === 'H1') continue;
     const dist = colorDistance(targetRgb, rgb);
     if (dist < minDist) { minDist = dist; closestKey = key; }
   }
@@ -71,12 +69,16 @@ const App = () => {
   const lastTouchDistRef = useRef(null);
   const initialZoomRef = useRef(1);
 
+  // --- 新增：色号替换相关 State ---
+  const [isReplaceModalVisible, setIsReplaceModalVisible] = useState(false);
+  const [replaceSourceColor, setReplaceSourceColor] = useState('');
+  const [replaceTargetColor, setReplaceTargetColor] = useState('A1');
+
   // --- 优化2：重构图片处理逻辑 ---
   const processImage = useCallback(async () => {
     if (!imageSrc || !cols) return;
     setLoading(true); setHistory([]); setRedoStack([]);
 
-    // 给 UI 一点时间渲染 loading 状态
     await new Promise(resolve => setTimeout(resolve, 50));
 
     const img = new Image();
@@ -84,42 +86,34 @@ const App = () => {
     img.src = imageSrc;
     img.onload = () => {
       const { width, height } = img;
-      // 计算行数，保持纵横比
       const rows = Math.round(cols / (width / height));
 
       const cellSize = 20;
       const leftMargin = 40; const topMargin = 40;
 
-      // 创建一个微型 Canvas，尺寸正好是 cols * rows
-      // 利用浏览器内置的高质量缩放算法（双三次插值）来自动处理像素平均
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = cols;
       tempCanvas.height = rows;
       const tempCtx = tempCanvas.getContext('2d');
 
-      // 开启高质量平滑
       tempCtx.imageSmoothingEnabled = true;
       tempCtx.imageSmoothingQuality = 'high';
 
-      // 先填充白色背景，防止透明图片处理出错
       tempCtx.fillStyle = '#FFFFFF';
       tempCtx.fillRect(0, 0, cols, rows);
       tempCtx.drawImage(img, 0, 0, cols, rows);
 
-      // 直接获取缩放后的像素数据
       const imageData = tempCtx.getImageData(0, 0, cols, rows).data;
 
       const pixelData = [];
       const colorCount = {};
 
-      // 遍历缩放后的每个像素
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           const i = (row * cols + col) * 4;
           const r = imageData[i];
           const g = imageData[i + 1];
           const b = imageData[i + 2];
-          // alpha = imageData[i + 3] - 这里我们忽略透明度，因为已经垫了白底
 
           const targetRgb = { r, g, b };
           const closestKey = findClosestColorKey(targetRgb);
@@ -134,7 +128,6 @@ const App = () => {
         canvasConfig: { rows, cols, cellSize, leftMargin, topMargin, width: leftMargin + cols * cellSize + 20, height: topMargin + rows * cellSize + 40 }
       });
 
-      // 移动端自动调整缩放比例
       const canvasWidth = leftMargin + cols * cellSize + 20;
       const screenWidth = window.innerWidth - 20;
       if (screenWidth < 768 && canvasWidth > screenWidth) {
@@ -147,7 +140,6 @@ const App = () => {
 
   useEffect(() => { processImage(); }, [processImage]);
 
-  // 画布绘制 (保持不变)
   useEffect(() => {
     if (!data || !canvasRef.current) return;
     const canvas = canvasRef.current;
@@ -192,7 +184,6 @@ const App = () => {
       ctx.restore();
     });
 
-    // 黑色加粗网格线
     ctx.save();
     ctx.beginPath();
     ctx.strokeStyle = '#000000';
@@ -221,7 +212,6 @@ const App = () => {
   const handleUndo = () => { if (history.length) { setRedoStack(p => [data, ...p]); setData(history[history.length - 1]); setHistory(p => p.slice(0, -1)); } };
   const handleRedo = () => { if (redoStack.length) { setHistory(p => [...p, data]); setData(redoStack[0]); setRedoStack(p => p.slice(1)); } };
 
-  // 双指缩放处理
   const getTouchDistance = (touches) => {
     if (touches.length < 2) return 0;
     const dx = touches[0].clientX - touches[1].clientX;
@@ -231,12 +221,10 @@ const App = () => {
 
   const handleTouchStart = (e) => {
     if (e.touches.length === 2) {
-      // 双指按下，记录初始距离和缩放
       lastTouchDistRef.current = getTouchDistance(e.touches);
       initialZoomRef.current = zoomLevel;
       e.preventDefault();
     } else if (e.touches.length === 1) {
-      // 单指按下，开始绘制
       const touch = e.touches[0];
       handleCanvasAction(touch, true);
       setIsDrawing(true);
@@ -246,7 +234,6 @@ const App = () => {
 
   const handleTouchMove = (e) => {
     if (e.touches.length === 2) {
-      // 双指移动，进行缩放
       const currentDist = getTouchDistance(e.touches);
       if (lastTouchDistRef.current && lastTouchDistRef.current > 0) {
         const scale = currentDist / lastTouchDistRef.current;
@@ -255,7 +242,6 @@ const App = () => {
       }
       e.preventDefault();
     } else if (e.touches.length === 1 && isDrawing) {
-      // 单指移动，进行绘制
       const touch = e.touches[0];
       handleCanvasAction(touch, false);
       e.preventDefault();
@@ -276,7 +262,6 @@ const App = () => {
     const rect = canvasRef.current.getBoundingClientRect();
     const scaleX = canvasRef.current.width / rect.width;
     const scaleY = canvasRef.current.height / rect.height;
-    // 兼容鼠标和触摸事件
     const clientX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
     const clientY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
     const x = (clientX - rect.left) * scaleX;
@@ -354,6 +339,42 @@ const App = () => {
     }));
     setData(prev => ({ ...prev, pixelData: newPixelData }));
     message.success('已水平翻转');
+  };
+
+  // --- 新增：处理全局替换色号的逻辑 ---
+  const openReplaceModal = () => {
+    if (!data) return;
+    const availableColors = Object.keys(data.colorCount);
+    if (availableColors.length > 0) {
+      // 默认选中当前正在使用的颜色（如果它存在于图纸中），否则选第一个
+      setReplaceSourceColor(selectedColor && availableColors.includes(selectedColor) ? selectedColor : availableColors[0]);
+    }
+    setReplaceTargetColor('A1'); // 重置目标颜色
+    setIsReplaceModalVisible(true);
+  };
+
+  const executeReplaceColor = () => {
+    if (!data || !replaceSourceColor || !replaceTargetColor) return;
+    if (replaceSourceColor === replaceTargetColor) {
+      message.info("原色号和新色号相同，无需替换");
+      setIsReplaceModalVisible(false);
+      return;
+    }
+
+    saveHistory();
+    const newPixels = data.pixelData.map(p => ({
+      ...p,
+      colorKey: p.colorKey === replaceSourceColor ? replaceTargetColor : p.colorKey
+    }));
+
+    updateData(newPixels);
+    message.success(`已将所有 ${replaceSourceColor} 替换为 ${replaceTargetColor}`);
+
+    // 如果替换的正好是当前画笔选中的颜色，同步更新画笔颜色
+    if (selectedColor === replaceSourceColor) {
+      setSelectedColor(replaceTargetColor);
+    }
+    setIsReplaceModalVisible(false);
   };
 
   const saveImage = () => {
@@ -499,6 +520,8 @@ const App = () => {
             <InputNumber addonBefore="过滤" min={0} max={20} value={filterThreshold} onChange={setFilterThreshold} size="small" />
             <Button icon={<FilterOutlined />} onClick={filterColors} disabled={!data} size="small">优化</Button>
             <Button icon={<SwapOutlined />} onClick={handleMirror} disabled={!data} size="small">镜像</Button>
+            {/* 新增的全局替换按钮 */}
+            <Button icon={<RetweetOutlined />} onClick={openReplaceModal} disabled={!data} size="small">替换</Button>
             <Button type="primary" ghost icon={<DownloadOutlined />} onClick={saveImage} disabled={!data} size="small">导出</Button>
           </Space>
 
@@ -533,7 +556,7 @@ const App = () => {
 
               <div style={{ width: 20, height: 20, background: colorMap[selectedColor], border: '1px solid #ddd', borderRadius: 2 }} />
               <Select showSearch value={selectedColor} onChange={setSelectedColor} style={{ width: 80 }} size="small" filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}>
-                {sortedKeys.map(k => <Option key={k} value={k} label={k}><Space><div style={{ width: 10, height: 10, background: colorMap[k] }} />{k}</Space></Option>)}
+                {sortedKeys.map(k => <Option key={k} value={k} label={k}><Space><div style={{ width: 10, height: 10, border: '1px solid #ddd', background: colorMap[k] }} />{k}</Space></Option>)}
               </Select>
             </Space>
           </div>
@@ -614,35 +637,76 @@ const App = () => {
           })}
         </div>}
       </Card>
-      {/* 悬浮版权标 (Fixed Badge) - 移动端隐藏 */}
+
+      {/* 悬浮版权标 */}
       <div className="copyright-badge" style={{
-        position: 'fixed',
-        bottom: '10px',
-        right: '10px',
-        zIndex: 9999,
-        padding: '6px 12px',
-        background: 'rgba(255, 255, 255, 0.85)',
-        backdropFilter: 'blur(4px)',
-        borderRadius: '6px',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-        fontSize: '12px',
-        color: '#666',
-        textAlign: 'right',
-        pointerEvents: 'auto',
+        position: 'fixed', bottom: '10px', right: '10px', zIndex: 9999, padding: '6px 12px',
+        background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(4px)', borderRadius: '6px',
+        boxShadow: '0 2px 10px rgba(0,0,0,0.1)', fontSize: '12px', color: '#666', textAlign: 'right', pointerEvents: 'auto',
       }}>
-        <div>
-          Made with ❤️ by
-          <span style={{ color: '#ff4d4f', fontWeight: 'bold', margin: '0 4px' }}>
-            xhs：士多啤梨(拼豆发疯版)
-          </span>
-        </div>
-        <div style={{ transform: 'scale(0.9)', transformOrigin: 'right center', opacity: 0.8 }}>
-          xhs号：95410734438
-        </div>
+        <div>Made with ❤️ by <span style={{ color: '#ff4d4f', fontWeight: 'bold', margin: '0 4px' }}>xhs：士多啤梨(拼豆发疯版)</span></div>
+        <div style={{ transform: 'scale(0.9)', transformOrigin: 'right center', opacity: 0.8 }}>xhs号：95410734438</div>
       </div>
+
+      {/* 新增的色号替换弹窗 */}
+      <Modal
+        title={<span><RetweetOutlined /> 全局色号替换</span>}
+        open={isReplaceModalVisible}
+        onOk={executeReplaceColor}
+        onCancel={() => setIsReplaceModalVisible(false)}
+        okText="确认替换"
+        cancelText="取消"
+        width={320}
+        destroyOnClose
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0' }}>
+          <div>
+            <div style={{ marginBottom: 6, fontSize: 12, color: '#666' }}>原色号 (当前图纸中)</div>
+            <Select
+              showSearch
+              value={replaceSourceColor}
+              onChange={setReplaceSourceColor}
+              style={{ width: 110 }}
+              filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+            >
+              {data && Object.keys(data.colorCount).map(k => (
+                <Option key={k} value={k} label={k}>
+                  <Space>
+                    <div style={{ width: 12, height: 12, background: colorMap[k], border: '1px solid #ddd', borderRadius: 2 }} />
+                    {k}
+                  </Space>
+                </Option>
+              ))}
+            </Select>
+          </div>
+
+          <SwapRightOutlined style={{ fontSize: 24, color: '#bfbfbf', marginTop: 20 }} />
+
+          <div>
+            <div style={{ marginBottom: 6, fontSize: 12, color: '#666' }}>新色号 (目标替换为)</div>
+            <Select
+              showSearch
+              value={replaceTargetColor}
+              onChange={setReplaceTargetColor}
+              style={{ width: 110 }}
+              filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
+            >
+              {sortedKeys.map(k => (
+                <Option key={k} value={k} label={k}>
+                  <Space>
+                    <div style={{ width: 12, height: 12, background: colorMap[k], border: '1px solid #ddd', borderRadius: 2 }} />
+                    {k}
+                  </Space>
+                </Option>
+              ))}
+            </Select>
+          </div>
+        </div>
+      </Modal>
+
       <Analytics />
     </div>
   );
 };
 
-export default App; 
+export default App;
