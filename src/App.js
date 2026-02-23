@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Upload, Button, InputNumber, message, Card,
-  Divider, Tooltip, Select, Space, Radio, Spin, Slider, Modal // 新增 Modal
+  Divider, Tooltip, Select, Space, Radio, Spin, Slider, Modal
 } from 'antd';
 import {
   UploadOutlined, DownloadOutlined, FilterOutlined,
   EditOutlined, BgColorsOutlined, UndoOutlined,
   RedoOutlined, ZoomInOutlined, ZoomOutOutlined,
   FormatPainterOutlined, EyeOutlined, SwapOutlined,
-  PictureOutlined, RetweetOutlined, SwapRightOutlined // 新增两个 Icon
+  PictureOutlined, RetweetOutlined, SwapRightOutlined,
+  DragOutlined, CopyOutlined, SnippetsOutlined,
+  LeftOutlined
 } from '@ant-design/icons';
 import { Analytics } from '@vercel/analytics/react';
 import './App.css';
@@ -26,22 +28,16 @@ const hexToRgb = (hex) => {
 };
 
 const colorMapRgb = Object.entries(colorMap).reduce((acc, [key, hex]) => {
-  acc[key] = hexToRgb(hex);
-  return acc;
+  acc[key] = hexToRgb(hex); return acc;
 }, {});
 
-// --- 优化1：使用 Redmean 算法替代标准欧几里得距离 ---
 const colorDistance = (rgb1, rgb2) => {
-  const rmean = (rgb1.r + rgb2.r) / 2;
-  const r = rgb1.r - rgb2.r;
-  const g = rgb1.g - rgb2.g;
-  const b = rgb1.b - rgb2.b;
+  const rmean = (rgb1.r + rgb2.r) / 2; const r = rgb1.r - rgb2.r; const g = rgb1.g - rgb2.g; const b = rgb1.b - rgb2.b;
   return Math.sqrt((((512 + rmean) * r * r) >> 8) + 4 * g * g + (((767 - rmean) * b * b) >> 8));
 };
 
 const findClosestColorKey = (targetRgb) => {
-  let minDist = Infinity;
-  let closestKey = 'H2';
+  let minDist = Infinity; let closestKey = 'H2';
   for (const [key, rgb] of Object.entries(colorMapRgb)) {
     if (key === 'H1') continue;
     const dist = colorDistance(targetRgb, rgb);
@@ -52,72 +48,99 @@ const findClosestColorKey = (targetRgb) => {
 
 const calculateBrightness = (rgb) => (rgb.r * 0.299 + rgb.g * 0.587 + rgb.b * 0.114) / 255;
 
-const App = () => {
+
+// === 独立的画布组件 ===
+const CanvasPanel = ({
+  panelId,
+  isStandalone,
+  onEnableAdvanced,
+  globalTool, setGlobalTool,
+  globalSelectedColor, setGlobalSelectedColor,
+  isHighlightMode, setIsHighlightMode,
+  clipboard, setClipboard,
+  sortedKeys
+}) => {
   const [imageSrc, setImageSrc] = useState('');
-  const [cols, setCols] = useState(50);
+  const [cols, setCols] = useState(isStandalone ? 50 : 40);
   const [filterThreshold, setFilterThreshold] = useState(0);
   const [loading, setLoading] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [data, setData] = useState(null);
   const [history, setHistory] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
-  const [selectedColor, setSelectedColor] = useState('A1');
-  const [currentTool, setCurrentTool] = useState('pen');
   const [isDrawing, setIsDrawing] = useState(false);
-  const [isHighlightMode, setIsHighlightMode] = useState(false);
-  const canvasRef = useRef(null);
-  const lastTouchDistRef = useRef(null);
-  const initialZoomRef = useRef(1);
 
-  // --- 新增：色号替换相关 State ---
   const [isReplaceModalVisible, setIsReplaceModalVisible] = useState(false);
   const [replaceSourceColor, setReplaceSourceColor] = useState('');
   const [replaceTargetColor, setReplaceTargetColor] = useState('A1');
 
-  // --- 优化2：重构图片处理逻辑 ---
+  const [selectionBounds, setSelectionBounds] = useState(null);
+  const [floatingPixels, setFloatingPixels] = useState(null);
+  const [selectionState, setSelectionState] = useState('none');
+  const [dragStart, setDragStart] = useState(null);
+
+  const canvasRef = useRef(null);
+  const lastTouchDistRef = useRef(null);
+  const initialZoomRef = useRef(1);
+  const latestDataRef = useRef(data);
+  const latestFloatingRef = useRef(floatingPixels);
+
+  useEffect(() => { latestDataRef.current = data; }, [data]);
+  useEffect(() => { latestFloatingRef.current = floatingPixels; }, [floatingPixels]);
+
+  const updateData = useCallback((pixels) => {
+    const counts = {}; pixels.forEach(p => counts[p.colorKey] = (counts[p.colorKey] || 0) + 1);
+    setData(p => ({ ...p, pixelData: pixels, colorCount: counts }));
+  }, []);
+
+  const saveHistory = useCallback(() => {
+    if (data) { setHistory(p => [...p.slice(-19), JSON.parse(JSON.stringify(data))]); setRedoStack([]); }
+  }, [data]);
+
+  const commitFloatingPixelsSafe = useCallback(() => {
+    const currData = latestDataRef.current; const currFloat = latestFloatingRef.current;
+    if (!currData || !currFloat) return;
+    const newPixelData = [...currData.pixelData];
+    currFloat.pixels.forEach(fp => {
+      const targetRow = fp.row + currFloat.dr; const targetCol = fp.col + currFloat.dc;
+      if (targetRow >= 0 && targetRow < currData.canvasConfig.rows && targetCol >= 0 && targetCol < currData.canvasConfig.cols) {
+        const idx = newPixelData.findIndex(p => p.row === targetRow && p.col === targetCol);
+        if (idx !== -1) newPixelData[idx] = { ...newPixelData[idx], colorKey: fp.colorKey };
+      }
+    });
+    updateData(newPixelData); setFloatingPixels(null);
+  }, [updateData]);
+
+  useEffect(() => {
+    if (globalTool !== 'select' || isStandalone) {
+      commitFloatingPixelsSafe(); setSelectionBounds(null); setSelectionState('none');
+    }
+  }, [globalTool, isStandalone, commitFloatingPixelsSafe]);
+
   const processImage = useCallback(async () => {
     if (!imageSrc || !cols) return;
     setLoading(true); setHistory([]); setRedoStack([]);
+    commitFloatingPixelsSafe(); setSelectionBounds(null); setSelectionState('none');
 
     await new Promise(resolve => setTimeout(resolve, 50));
-
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = imageSrc;
+    const img = new Image(); img.crossOrigin = 'anonymous'; img.src = imageSrc;
     img.onload = () => {
-      const { width, height } = img;
-      const rows = Math.round(cols / (width / height));
-
-      const cellSize = 20;
-      const leftMargin = 40; const topMargin = 40;
+      const { width, height } = img; const rows = Math.round(cols / (width / height));
+      const cellSize = 20; const leftMargin = 40; const topMargin = 40;
 
       const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = cols;
-      tempCanvas.height = rows;
-      const tempCtx = tempCanvas.getContext('2d');
-
-      tempCtx.imageSmoothingEnabled = true;
-      tempCtx.imageSmoothingQuality = 'high';
-
-      tempCtx.fillStyle = '#FFFFFF';
-      tempCtx.fillRect(0, 0, cols, rows);
-      tempCtx.drawImage(img, 0, 0, cols, rows);
+      tempCanvas.width = cols; tempCanvas.height = rows; const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.imageSmoothingEnabled = true; tempCtx.imageSmoothingQuality = 'high';
+      tempCtx.fillStyle = '#FFFFFF'; tempCtx.fillRect(0, 0, cols, rows); tempCtx.drawImage(img, 0, 0, cols, rows);
 
       const imageData = tempCtx.getImageData(0, 0, cols, rows).data;
-
-      const pixelData = [];
-      const colorCount = {};
+      const pixelData = []; const colorCount = {};
 
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           const i = (row * cols + col) * 4;
-          const r = imageData[i];
-          const g = imageData[i + 1];
-          const b = imageData[i + 2];
-
-          const targetRgb = { r, g, b };
+          const targetRgb = { r: imageData[i], g: imageData[i + 1], b: imageData[i + 2] };
           const closestKey = findClosestColorKey(targetRgb);
-
           colorCount[closestKey] = (colorCount[closestKey] || 0) + 1;
           pixelData.push({ row, col, colorKey: closestKey });
         }
@@ -128,193 +151,217 @@ const App = () => {
         canvasConfig: { rows, cols, cellSize, leftMargin, topMargin, width: leftMargin + cols * cellSize + 20, height: topMargin + rows * cellSize + 40 }
       });
 
-      const canvasWidth = leftMargin + cols * cellSize + 20;
-      const screenWidth = window.innerWidth - 20;
-      if (screenWidth < 768 && canvasWidth > screenWidth) {
-        setZoomLevel(Math.max(0.3, screenWidth / canvasWidth));
-      }
+      if (isStandalone) {
+        const canvasWidth = leftMargin + cols * cellSize + 20;
+        const screenWidth = window.innerWidth - 20;
+        if (screenWidth < 768 && canvasWidth > screenWidth) setZoomLevel(Math.max(0.3, screenWidth / canvasWidth));
+        else setZoomLevel(1);
+      } else { setZoomLevel(1); }
 
       setLoading(false);
     };
-  }, [imageSrc, cols]);
+  }, [imageSrc, cols, isStandalone, commitFloatingPixelsSafe]);
 
   useEffect(() => { processImage(); }, [processImage]);
 
   useEffect(() => {
     if (!data || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
+    const canvas = canvasRef.current; const ctx = canvas.getContext('2d');
     const { rows, cols: colCount, cellSize, leftMargin, topMargin, width, height } = data.canvasConfig;
 
     canvas.width = width; canvas.height = height;
     ctx.fillStyle = '#f0f0f0'; ctx.fillRect(0, 0, width, height);
-
     ctx.font = 'bold 12px Arial'; ctx.fillStyle = '#666'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
     for (let r = 0; r < rows; r++) ctx.fillText(r + 1, leftMargin - 20, topMargin + r * cellSize + cellSize / 2);
     for (let c = 0; c < colCount; c++) ctx.fillText(c + 1, leftMargin + c * cellSize + cellSize / 2, topMargin + rows * cellSize + 20);
 
     data.pixelData.forEach(p => {
-      const isDimmed = isHighlightMode && p.colorKey !== selectedColor;
-      const isHighlighted = isHighlightMode && p.colorKey === selectedColor;
+      const isDimmed = isHighlightMode && p.colorKey !== globalSelectedColor;
+      const isHighlighted = isHighlightMode && p.colorKey === globalSelectedColor;
       const colorHex = colorMap[p.colorKey];
-      const x = leftMargin + p.col * cellSize;
-      const y = topMargin + p.row * cellSize;
+      const x = leftMargin + p.col * cellSize; const y = topMargin + p.row * cellSize;
 
       ctx.save();
       ctx.globalAlpha = isDimmed ? 0.15 : 1.0;
-      ctx.fillStyle = colorHex;
-      ctx.fillRect(x, y, cellSize, cellSize);
+      ctx.fillStyle = colorHex; ctx.fillRect(x, y, cellSize, cellSize);
+      ctx.globalAlpha = 1.0; ctx.strokeStyle = '#e0e0e0'; ctx.lineWidth = 0.5; ctx.strokeRect(x, y, cellSize, cellSize);
 
-      ctx.globalAlpha = 1.0;
-      ctx.strokeStyle = '#e0e0e0';
-      ctx.lineWidth = 0.5;
-      ctx.strokeRect(x, y, cellSize, cellSize);
-
-      if (isHighlighted) {
-        ctx.strokeStyle = '#ff0000';
-        ctx.lineWidth = 2.5;
-        ctx.strokeRect(x, y, cellSize, cellSize);
-      }
-
-      if (!isDimmed) {
+      if (isHighlighted) { ctx.strokeStyle = '#ff0000'; ctx.lineWidth = 2.5; ctx.strokeRect(x, y, cellSize, cellSize); }
+      if (!isDimmed && p.colorKey !== 'H1') {
         ctx.fillStyle = calculateBrightness(colorMapRgb[p.colorKey]) > 0.5 ? '#000' : '#fff';
-        ctx.font = 'bold 9px Arial';
-        ctx.fillText(p.colorKey, x + cellSize / 2, y + cellSize / 2);
+        ctx.font = 'bold 9px Arial'; ctx.fillText(p.colorKey, x + cellSize / 2, y + cellSize / 2);
       }
       ctx.restore();
     });
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1.5;
+    if (floatingPixels && !isStandalone) {
+      floatingPixels.pixels.forEach(p => {
+        const targetRow = p.row + floatingPixels.dr; const targetCol = p.col + floatingPixels.dc;
+        if (targetRow < 0 || targetRow >= rows || targetCol < 0 || targetCol >= colCount) return;
 
-    for (let c = 5; c < colCount; c += 5) {
-      const x = leftMargin + c * cellSize;
-      ctx.moveTo(x, topMargin);
-      ctx.lineTo(x, topMargin + rows * cellSize);
-    }
-    for (let r = 5; r < rows; r += 5) {
-      const y = topMargin + r * cellSize;
-      ctx.moveTo(leftMargin, y);
-      ctx.lineTo(leftMargin + colCount * cellSize, y);
-    }
-    ctx.stroke();
+        const isDimmed = isHighlightMode && p.colorKey !== globalSelectedColor;
+        const x = leftMargin + targetCol * cellSize; const y = topMargin + targetRow * cellSize;
 
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(leftMargin, topMargin, colCount * cellSize, rows * cellSize);
+        ctx.save();
+        ctx.globalAlpha = isDimmed ? 0.15 : 1.0;
+        ctx.fillStyle = colorMap[p.colorKey]; ctx.fillRect(x, y, cellSize, cellSize);
+        ctx.globalAlpha = 1.0; ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.strokeRect(x, y, cellSize, cellSize);
+        if (!isDimmed && p.colorKey !== 'H1') {
+          ctx.fillStyle = calculateBrightness(colorMapRgb[p.colorKey]) > 0.5 ? '#000' : '#fff';
+          ctx.font = 'bold 9px Arial'; ctx.fillText(p.colorKey, x + cellSize / 2, y + cellSize / 2);
+        }
+        ctx.restore();
+      });
+    }
+
+    ctx.save(); ctx.beginPath(); ctx.strokeStyle = '#000000'; ctx.lineWidth = 1.5;
+    for (let c = 5; c < colCount; c += 5) { const x = leftMargin + c * cellSize; ctx.moveTo(x, topMargin); ctx.lineTo(x, topMargin + rows * cellSize); }
+    for (let r = 5; r < rows; r += 5) { const y = topMargin + r * cellSize; ctx.moveTo(leftMargin, y); ctx.lineTo(leftMargin + colCount * cellSize, y); }
+    ctx.stroke(); ctx.strokeStyle = '#000000'; ctx.lineWidth = 1; ctx.strokeRect(leftMargin, topMargin, colCount * cellSize, rows * cellSize);
     ctx.restore();
 
-  }, [data, isHighlightMode, selectedColor]);
+    if (selectionBounds && !isStandalone) {
+      const minR = Math.min(selectionBounds.r1, selectionBounds.r2); const maxR = Math.max(selectionBounds.r1, selectionBounds.r2);
+      const minC = Math.min(selectionBounds.c1, selectionBounds.c2); const maxC = Math.max(selectionBounds.c1, selectionBounds.c2);
+      const x = leftMargin + minC * cellSize; const y = topMargin + minR * cellSize;
+      const w = (maxC - minC + 1) * cellSize; const h = (maxR - minR + 1) * cellSize;
 
-  const saveHistory = () => { if (data) { setHistory(p => [...p.slice(-19), JSON.parse(JSON.stringify(data))]); setRedoStack([]); } };
-  const handleUndo = () => { if (history.length) { setRedoStack(p => [data, ...p]); setData(history[history.length - 1]); setHistory(p => p.slice(0, -1)); } };
-  const handleRedo = () => { if (redoStack.length) { setHistory(p => [...p, data]); setData(redoStack[0]); setRedoStack(p => p.slice(1)); } };
-
-  const getTouchDistance = (touches) => {
-    if (touches.length < 2) return 0;
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  const handleTouchStart = (e) => {
-    if (e.touches.length === 2) {
-      lastTouchDistRef.current = getTouchDistance(e.touches);
-      initialZoomRef.current = zoomLevel;
-      e.preventDefault();
-    } else if (e.touches.length === 1) {
-      const touch = e.touches[0];
-      handleCanvasAction(touch, true);
-      setIsDrawing(true);
-      e.preventDefault();
+      ctx.save(); ctx.setLineDash([6, 6]); ctx.strokeStyle = '#1890ff'; ctx.lineWidth = 2.5; ctx.strokeRect(x, y, w, h);
+      ctx.setLineDash([6, 6]); ctx.lineDashOffset = 6; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.5; ctx.strokeRect(x, y, w, h);
+      ctx.restore();
     }
+  }, [data, isHighlightMode, globalSelectedColor, selectionBounds, floatingPixels, isStandalone]);
+
+  const getCanvasCoords = (e) => {
+    if (!data || !canvasRef.current) return null;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const scaleX = canvasRef.current.width / rect.width; const scaleY = canvasRef.current.height / rect.height;
+    const clientX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0; const clientY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
+    const x = (clientX - rect.left) * scaleX; const y = (clientY - rect.top) * scaleY;
+    const { leftMargin, topMargin, cellSize, rows, cols } = data.canvasConfig;
+
+    if (x < leftMargin || y < topMargin) return null;
+    const col = Math.floor((x - leftMargin) / cellSize); const row = Math.floor((y - topMargin) / cellSize);
+    if (col < 0 || col >= cols || row < 0 || row >= rows) return null;
+    return { row, col };
   };
 
-  const handleTouchMove = (e) => {
-    if (e.touches.length === 2) {
-      const currentDist = getTouchDistance(e.touches);
-      if (lastTouchDistRef.current && lastTouchDistRef.current > 0) {
-        const scale = currentDist / lastTouchDistRef.current;
-        const newZoom = Math.max(0.3, Math.min(2, initialZoomRef.current * scale));
-        setZoomLevel(newZoom);
+  const handleMouseDown = (e) => {
+    const coords = getCanvasCoords(e); if (!coords) return;
+    const { row, col } = coords;
+
+    if (globalTool === 'select' && !isStandalone) {
+      const minR = selectionBounds ? Math.min(selectionBounds.r1, selectionBounds.r2) : -1;
+      const maxR = selectionBounds ? Math.max(selectionBounds.r1, selectionBounds.r2) : -1;
+      const minC = selectionBounds ? Math.min(selectionBounds.c1, selectionBounds.c2) : -1;
+      const maxC = selectionBounds ? Math.max(selectionBounds.c1, selectionBounds.c2) : -1;
+
+      const isInside = selectionBounds && row >= minR && row <= maxR && col >= minC && col <= maxC;
+
+      if (isInside) {
+        setSelectionState('dragging'); setDragStart({ row, col });
+        if (!floatingPixels) {
+          saveHistory();
+          const newPixelData = [...data.pixelData]; const floating = [];
+          for (let r = minR; r <= maxR; r++) {
+            for (let c = minC; c <= maxC; c++) {
+              const idx = newPixelData.findIndex(p => p.row === r && p.col === c);
+              if (idx !== -1) {
+                floating.push({ ...newPixelData[idx] });
+                newPixelData[idx] = { ...newPixelData[idx], colorKey: 'H2' };
+              }
+            }
+          }
+          updateData(newPixelData); setFloatingPixels({ pixels: floating, dr: 0, dc: 0 });
+        }
+      } else {
+        if (floatingPixels) commitFloatingPixelsSafe();
+        setSelectionState('selecting'); setSelectionBounds({ r1: row, c1: col, r2: row, c2: col }); setDragStart({ row, col });
       }
-      e.preventDefault();
-    } else if (e.touches.length === 1 && isDrawing) {
-      const touch = e.touches[0];
-      handleCanvasAction(touch, false);
-      e.preventDefault();
+    } else {
+      if (floatingPixels && !isStandalone) commitFloatingPixelsSafe();
+      setSelectionBounds(null); setSelectionState('none');
+      setIsDrawing(true); handleCanvasAction(e, true);
     }
   };
 
-  const handleTouchEnd = (e) => {
-    if (e.touches.length < 2) {
-      lastTouchDistRef.current = null;
-    }
-    if (e.touches.length === 0) {
-      setIsDrawing(false);
-    }
+  const handleMouseMove = (e) => {
+    if (globalTool === 'select' && !isStandalone) {
+      const coords = getCanvasCoords(e); if (!coords) return;
+      const { row, col } = coords;
+      if (selectionState === 'selecting') {
+        setSelectionBounds(prev => ({ ...prev, r2: row, c2: col }));
+      } else if (selectionState === 'dragging') {
+        const dr = row - dragStart.row; const dc = col - dragStart.col;
+        if (dr !== 0 || dc !== 0) {
+          setFloatingPixels(prev => ({ ...prev, dr: prev.dr + dr, dc: prev.dc + dc }));
+          setSelectionBounds(prev => ({ r1: prev.r1 + dr, c1: prev.c1 + dc, r2: prev.r2 + dr, c2: prev.c2 + dc }));
+          setDragStart({ row, col });
+        }
+      }
+    } else if (isDrawing) { handleCanvasAction(e, false); }
+  };
+
+  const handleMouseUp = () => {
+    if (globalTool === 'select' && !isStandalone) {
+      if (selectionState === 'selecting' || selectionState === 'dragging') setSelectionState('selected');
+    } else { setIsDrawing(false); }
   };
 
   const handleCanvasAction = (e, isClick) => {
-    if (!data || !canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const scaleX = canvasRef.current.width / rect.width;
-    const scaleY = canvasRef.current.height / rect.height;
-    const clientX = e.clientX || (e.touches && e.touches[0]?.clientX) || 0;
-    const clientY = e.clientY || (e.touches && e.touches[0]?.clientY) || 0;
-    const x = (clientX - rect.left) * scaleX;
-    const y = (clientY - rect.top) * scaleY;
-    const { leftMargin, topMargin, cellSize, rows, cols } = data.canvasConfig;
+    const coords = getCanvasCoords(e); if (!coords) return;
+    const { row, col } = coords; const { rows, cols } = data.canvasConfig;
 
-    if (x < leftMargin || y < topMargin) return;
-    const col = Math.floor((x - leftMargin) / cellSize);
-    const row = Math.floor((y - topMargin) / cellSize);
-    if (col < 0 || col >= cols || row < 0 || row >= rows) return;
-
-    const idx = data.pixelData.findIndex(p => p.row === row && p.col === col);
-    if (idx === -1) return;
+    const idx = data.pixelData.findIndex(p => p.row === row && p.col === col); if (idx === -1) return;
     const pixel = data.pixelData[idx];
 
-    if (isHighlightMode && isClick) {
-      setSelectedColor(pixel.colorKey);
-      return;
-    }
-
-    if (currentTool === 'dropper' && isClick) { setSelectedColor(pixel.colorKey); setCurrentTool('pen'); message.success(`已吸取 ${pixel.colorKey}`); return; }
+    if (isHighlightMode && isClick) { setGlobalSelectedColor(pixel.colorKey); return; }
+    if (globalTool === 'dropper' && isClick) { setGlobalSelectedColor(pixel.colorKey); setGlobalTool('pen'); message.success(`已吸取 ${pixel.colorKey}`); return; }
     if (isClick) saveHistory();
 
-    if (currentTool === 'bucket' && isClick) {
-      if (pixel.colorKey === selectedColor) return;
+    if (globalTool === 'bucket' && isClick) {
+      if (pixel.colorKey === globalSelectedColor) return;
       const stack = [[row, col]]; const visited = new Set();
-      const newPixels = [...data.pixelData];
-      const pMap = new Map(); newPixels.forEach((p, i) => pMap.set(`${p.row},${p.col}`, i));
+      const newPixels = [...data.pixelData]; const pMap = new Map(); newPixels.forEach((p, i) => pMap.set(`${p.row},${p.col}`, i));
 
       while (stack.length) {
         const [r, c] = stack.pop(); const k = `${r},${c}`;
         if (visited.has(k)) continue;
         const i = pMap.get(k); if (i === undefined) continue;
         if (newPixels[i].colorKey === pixel.colorKey) {
-          newPixels[i] = { ...newPixels[i], colorKey: selectedColor }; visited.add(k);
+          newPixels[i] = { ...newPixels[i], colorKey: globalSelectedColor }; visited.add(k);
           if (r > 0) stack.push([r - 1, c]); if (r < rows - 1) stack.push([r + 1, c]);
           if (c > 0) stack.push([r, c - 1]); if (c < cols - 1) stack.push([r, c + 1]);
         }
       }
       updateData(newPixels);
-    } else if (currentTool === 'pen' && pixel.colorKey !== selectedColor) {
-      const newPixels = [...data.pixelData]; newPixels[idx] = { ...pixel, colorKey: selectedColor };
+    } else if (globalTool === 'pen' && pixel.colorKey !== globalSelectedColor) {
+      const newPixels = [...data.pixelData]; newPixels[idx] = { ...pixel, colorKey: globalSelectedColor };
       updateData(newPixels);
     }
   };
 
-  const updateData = (pixels) => {
-    const counts = {}; pixels.forEach(p => counts[p.colorKey] = (counts[p.colorKey] || 0) + 1);
-    setData(p => ({ ...p, pixelData: pixels, colorCount: counts }));
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      lastTouchDistRef.current = Math.sqrt(Math.pow(e.touches[0].clientX - e.touches[1].clientX, 2) + Math.pow(e.touches[0].clientY - e.touches[1].clientY, 2));
+      initialZoomRef.current = zoomLevel; e.preventDefault();
+    } else if (e.touches.length === 1) { handleMouseDown(e); e.preventDefault(); }
+  };
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2) {
+      const currentDist = Math.sqrt(Math.pow(e.touches[0].clientX - e.touches[1].clientX, 2) + Math.pow(e.touches[0].clientY - e.touches[1].clientY, 2));
+      if (lastTouchDistRef.current && lastTouchDistRef.current > 0) { setZoomLevel(Math.max(0.3, Math.min(2, initialZoomRef.current * (currentDist / lastTouchDistRef.current)))); }
+      e.preventDefault();
+    } else if (e.touches.length === 1) { handleMouseMove(e); e.preventDefault(); }
+  };
+  const handleTouchEnd = (e) => {
+    if (e.touches.length < 2) { lastTouchDistRef.current = null; }
+    if (e.touches.length === 0) { handleMouseUp(); }
   };
 
   const filterColors = () => {
-    if (!data) return; saveHistory();
+    if (!data) return; commitFloatingPixelsSafe(); saveHistory();
     const limit = data.totalPixels * (filterThreshold / 100);
     const keep = Object.keys(data.colorCount).filter(k => data.colorCount[k] >= limit);
     if (keep.length === Object.keys(data.colorCount).length) return message.info("无需优化");
@@ -325,177 +372,361 @@ const App = () => {
       keep.forEach(tk => { const d = colorDistance(colorMapRgb[k], colorMapRgb[tk]); if (d < min) { min = d; best = tk; } });
       map[k] = best;
     });
-    const newP = data.pixelData.map(p => ({ ...p, colorKey: map[p.colorKey] || p.colorKey }));
-    updateData(newP); message.success("优化完成");
+    updateData(data.pixelData.map(p => ({ ...p, colorKey: map[p.colorKey] || p.colorKey }))); message.success("优化完成");
   };
 
   const handleMirror = () => {
-    if (!data) return;
-    saveHistory();
-    const { cols } = data.canvasConfig;
-    const newPixelData = data.pixelData.map(p => ({
-      ...p,
-      col: cols - 1 - p.col
-    }));
-    setData(prev => ({ ...prev, pixelData: newPixelData }));
-    message.success('已水平翻转');
+    if (!data) return; commitFloatingPixelsSafe(); saveHistory();
+    updateData(data.pixelData.map(p => ({ ...p, col: data.canvasConfig.cols - 1 - p.col }))); message.success('已水平翻转');
   };
 
-  // --- 新增：处理全局替换色号的逻辑 ---
-  const openReplaceModal = () => {
-    if (!data) return;
-    const availableColors = Object.keys(data.colorCount);
-    if (availableColors.length > 0) {
-      // 默认选中当前正在使用的颜色（如果它存在于图纸中），否则选第一个
-      setReplaceSourceColor(selectedColor && availableColors.includes(selectedColor) ? selectedColor : availableColors[0]);
-    }
-    setReplaceTargetColor('A1'); // 重置目标颜色
-    setIsReplaceModalVisible(true);
+  const handleCopy = () => {
+    if (!data) return message.warning('请先生成图纸');
+    let sourcePixels = []; let minR = Infinity, minC = Infinity;
+
+    if (floatingPixels) {
+      sourcePixels = floatingPixels.pixels.map(p => ({ ...p, row: p.row + floatingPixels.dr, col: p.col + floatingPixels.dc }));
+    } else if (selectionBounds) {
+      const sr1 = Math.min(selectionBounds.r1, selectionBounds.r2); const sr2 = Math.max(selectionBounds.r1, selectionBounds.r2);
+      const sc1 = Math.min(selectionBounds.c1, selectionBounds.c2); const sc2 = Math.max(selectionBounds.c1, selectionBounds.c2);
+      sourcePixels = data.pixelData.filter(p => p.row >= sr1 && p.row <= sr2 && p.col >= sc1 && p.col <= sc2);
+    } else { return message.warning('请先使用移动工具框选区域'); }
+
+    if (sourcePixels.length === 0) return message.warning('选中区域为空');
+    sourcePixels.forEach(p => { if (p.row < minR) minR = p.row; if (p.col < minC) minC = p.col; });
+    const normalized = sourcePixels.map(p => ({ ...p, row: p.row - minR, col: p.col - minC }));
+    const maxR = Math.max(...normalized.map(p => p.row)); const maxC = Math.max(...normalized.map(p => p.col));
+
+    setClipboard({ pixels: normalized, rows: maxR + 1, cols: maxC + 1 });
+    message.success('已复制，可前往另一区域粘贴');
+  };
+
+  const handlePaste = () => {
+    if (!data) return message.warning('请先生成图纸底板');
+    if (!clipboard) return message.warning('剪贴板为空，请先复制');
+
+    commitFloatingPixelsSafe(); setGlobalTool('select'); saveHistory();
+    setFloatingPixels({ pixels: clipboard.pixels, dr: 0, dc: 0 });
+    setSelectionBounds({ r1: 0, c1: 0, r2: clipboard.rows - 1, c2: clipboard.cols - 1 });
+    setSelectionState('selected'); message.success('已粘贴，可拖动虚线框调整位置');
   };
 
   const executeReplaceColor = () => {
     if (!data || !replaceSourceColor || !replaceTargetColor) return;
-    if (replaceSourceColor === replaceTargetColor) {
-      message.info("原色号和新色号相同，无需替换");
-      setIsReplaceModalVisible(false);
-      return;
-    }
-
+    if (replaceSourceColor === replaceTargetColor) { setIsReplaceModalVisible(false); return; }
     saveHistory();
-    const newPixels = data.pixelData.map(p => ({
-      ...p,
-      colorKey: p.colorKey === replaceSourceColor ? replaceTargetColor : p.colorKey
-    }));
-
-    updateData(newPixels);
-    message.success(`已将所有 ${replaceSourceColor} 替换为 ${replaceTargetColor}`);
-
-    // 如果替换的正好是当前画笔选中的颜色，同步更新画笔颜色
-    if (selectedColor === replaceSourceColor) {
-      setSelectedColor(replaceTargetColor);
-    }
-    setIsReplaceModalVisible(false);
+    updateData(data.pixelData.map(p => ({ ...p, colorKey: p.colorKey === replaceSourceColor ? replaceTargetColor : p.colorKey })));
+    message.success(`已替换`); setIsReplaceModalVisible(false);
   };
 
   const saveImage = () => {
     if (!canvasRef.current || !data) return;
+
+    if (!isStandalone) {
+      commitFloatingPixelsSafe();
+      setSelectionBounds(null);
+    }
+
     const wasHighlighting = isHighlightMode;
     if (wasHighlighting) setIsHighlightMode(false);
 
     if (wasHighlighting) {
       message.warning("导出时已自动关闭高亮模式");
-      setTimeout(() => setIsHighlightMode(true), 1000);
+      if (isStandalone) setTimeout(() => setIsHighlightMode(true), 1000);
     }
 
-    const main = canvasRef.current;
-    const padding = 20;
+    const doExport = () => {
+      const main = canvasRef.current;
+      const padding = 20;
 
-    const sortedEntries = Object.entries(data.colorCount).sort((a, b) => b[1] - a[1]);
-    const cardWidth = 42;
-    const cardHeight = 70;
-    const gap = 10;
-    const availableWidth = main.width;
-    const itemsPerRow = Math.floor(availableWidth / (cardWidth + gap));
-    const totalRows = Math.ceil(sortedEntries.length / itemsPerRow);
-    const statsHeight = totalRows * (cardHeight + gap) + 60;
+      const sortedEntries = Object.entries(data.colorCount).sort((a, b) => b[1] - a[1]);
+      const cardWidth = 42;
+      const cardHeight = 70;
+      const gap = 10;
+      const availableWidth = main.width;
+      const itemsPerRow = Math.floor(availableWidth / (cardWidth + gap));
+      const totalRows = Math.ceil(sortedEntries.length / itemsPerRow);
+      const statsHeight = totalRows * (cardHeight + gap) + 60;
 
-    const cvs = document.createElement('canvas');
-    cvs.width = main.width + padding * 2;
-    cvs.height = main.height + statsHeight + padding * 2;
-    const ctx = cvs.getContext('2d');
+      const cvs = document.createElement('canvas');
+      cvs.width = main.width + padding * 2;
+      cvs.height = main.height + statsHeight + padding * 2;
+      const ctx = cvs.getContext('2d');
 
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cvs.width, cvs.height);
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cvs.width, cvs.height);
 
-    ctx.drawImage(main, padding, padding);
+      ctx.drawImage(main, padding, padding);
 
-    ctx.save();
-    ctx.translate(padding, padding);
-    ctx.beginPath();
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1.5;
-    const { rows, cols: colCount, cellSize, leftMargin, topMargin } = data.canvasConfig;
-    for (let c = 5; c < colCount; c += 5) {
-      const lx = leftMargin + c * cellSize;
-      ctx.moveTo(lx, topMargin);
-      ctx.lineTo(lx, topMargin + rows * cellSize);
-    }
-    for (let r = 5; r < rows; r += 5) {
-      const ly = topMargin + r * cellSize;
-      ctx.moveTo(leftMargin, ly);
-      ctx.lineTo(leftMargin + colCount * cellSize, ly);
-    }
-    ctx.stroke();
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(leftMargin, topMargin, colCount * cellSize, rows * cellSize);
-    ctx.restore();
-
-    ctx.save();
-    ctx.font = 'bold 20px Arial';
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
-    ctx.rotate(-Math.PI / 6);
-
-    const watermarkText = "aguaฅ՞•ﻌ•՞ฅagua";
-    const textMetrics = ctx.measureText(watermarkText);
-    const textWidth = textMetrics.width;
-    const textHeight = 100;
-
-    for (let y = -cvs.height; y < cvs.height * 2; y += textHeight) {
-      for (let x = -cvs.width; x < cvs.width * 2; x += textWidth + 100) {
-        ctx.fillText(watermarkText, x, y);
-      }
-    }
-    ctx.restore();
-
-    const statsStartY = main.height + padding + 40;
-    ctx.fillStyle = '#000';
-    ctx.font = 'bold 16px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText('色号统计ฅ՞•ﻌ•՞ฅ:', padding, statsStartY);
-
-    let currentX = padding;
-    let currentY = statsStartY + 25;
-
-    sortedEntries.forEach(([k, c]) => {
-      if (currentX + cardWidth > cvs.width - padding) {
-        currentX = padding;
-        currentY += cardHeight + gap;
-      }
-
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(currentX, currentY, cardWidth, cardHeight);
-      ctx.strokeStyle = '#ddd';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(currentX, currentY, cardWidth, cardHeight);
-
-      const colorHalfHeight = 26;
-      ctx.fillStyle = colorMap[k];
-      ctx.fillRect(currentX, currentY, cardWidth, colorHalfHeight);
+      ctx.save();
+      ctx.translate(padding, padding);
       ctx.beginPath();
-      ctx.moveTo(currentX, currentY + colorHalfHeight);
-      ctx.lineTo(currentX + cardWidth, currentY + colorHalfHeight);
-      ctx.strokeStyle = '#eee';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1.5;
+      const { rows, cols: colCount, cellSize, leftMargin, topMargin } = data.canvasConfig;
+      for (let c = 5; c < colCount; c += 5) {
+        const lx = leftMargin + c * cellSize;
+        ctx.moveTo(lx, topMargin);
+        ctx.lineTo(lx, topMargin + rows * cellSize);
+      }
+      for (let r = 5; r < rows; r += 5) {
+        const ly = topMargin + r * cellSize;
+        ctx.moveTo(leftMargin, ly);
+        ctx.lineTo(leftMargin + colCount * cellSize, ly);
+      }
       ctx.stroke();
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(leftMargin, topMargin, colCount * cellSize, rows * cellSize);
+      ctx.restore();
 
-      const textCenterY = currentY + colorHalfHeight + (cardHeight - colorHalfHeight) / 2;
-      const textCenterX = currentX + cardWidth / 2;
+      // ==========================================
+      // 【完全原封不动的水印代码段】一字未改！
+      // ==========================================
+      ctx.save();
+      ctx.font = 'bold 20px Arial';
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+      ctx.rotate(-Math.PI / 6);
 
-      ctx.fillStyle = '#333';
-      ctx.font = 'bold 11px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(k, textCenterX, textCenterY);
+      const watermarkText = "aguaฅ՞•ﻌ•՞ฅagua";
+      const textMetrics = ctx.measureText(watermarkText);
+      const textWidth = textMetrics.width;
+      const textHeight = 100;
 
-      ctx.fillStyle = '#666';
-      ctx.font = '10px Arial';
-      ctx.textBaseline = 'top';
-      ctx.fillText(`×${c}`, textCenterX, textCenterY);
+      for (let y = -cvs.height; y < cvs.height * 2; y += textHeight) {
+        for (let x = -cvs.width; x < cvs.width * 2; x += textWidth + 100) {
+          ctx.fillText(watermarkText, x, y);
+        }
+      }
+      ctx.restore();
+      // ==========================================
 
-      currentX += cardWidth + gap;
-    });
+      const statsStartY = main.height + padding + 40;
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 16px Arial';
+      ctx.textAlign = 'left';
+      ctx.fillText('色号统计ฅ՞•ﻌ•՞ฅ:', padding, statsStartY);
 
-    cvs.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'pixel-art.png'; a.click(); });
+      let currentX = padding;
+      let currentY = statsStartY + 25;
+
+      sortedEntries.forEach(([k, c]) => {
+        if (currentX + cardWidth > cvs.width - padding) {
+          currentX = padding;
+          currentY += cardHeight + gap;
+        }
+
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(currentX, currentY, cardWidth, cardHeight);
+        ctx.strokeStyle = '#ddd';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(currentX, currentY, cardWidth, cardHeight);
+
+        const colorHalfHeight = 26;
+        ctx.fillStyle = colorMap[k];
+        ctx.fillRect(currentX, currentY, cardWidth, colorHalfHeight);
+        ctx.beginPath();
+        ctx.moveTo(currentX, currentY + colorHalfHeight);
+        ctx.lineTo(currentX + cardWidth, currentY + colorHalfHeight);
+        ctx.strokeStyle = '#eee';
+        ctx.stroke();
+
+        const textCenterY = currentY + colorHalfHeight + (cardHeight - colorHalfHeight) / 2;
+        const textCenterX = currentX + cardWidth / 2;
+
+        ctx.fillStyle = '#333';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(k, textCenterX, textCenterY);
+
+        ctx.fillStyle = '#666';
+        ctx.font = '10px Arial';
+        ctx.textBaseline = 'top';
+        ctx.fillText(`×${c}`, textCenterX, textCenterY);
+
+        currentX += cardWidth + gap;
+      });
+
+      cvs.toBlob(b => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(b);
+        a.download = isStandalone ? 'pixel-art.png' : `pixel-art-panel${panelId}.png`;
+        a.click();
+      });
+    };
+
+    if (isStandalone) {
+      doExport();
+    } else {
+      setTimeout(() => {
+        doExport();
+        if (wasHighlighting) setIsHighlightMode(true);
+      }, 50);
+    }
   };
+
+  // --- 彻底还原样式：100% 退回最初的状态 ---
+  const cardStyle = isStandalone
+    ? { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+    : { flex: '1 1 45%', minWidth: 360, display: 'flex', flexDirection: 'column', margin: '4px', border: '1px solid #d9d9d9', borderRadius: '8px' };
+
+  return (
+    <Card
+      title={isStandalone ? <span><FormatPainterOutlined />拼豆图纸生成器</span> : `图纸区域 ${panelId}`}
+      className={isStandalone ? "pixel-editor" : ""}
+      style={cardStyle}
+      bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', overflow: 'hidden' }}
+    >
+      <div style={isStandalone ? { flex: '0 0 auto' } : { flex: '0 0 auto', marginBottom: 8 }}>
+        <Space wrap className="control-panel" style={{ width: '100%', gap: 4 }}>
+          <Upload accept="image/*" beforeUpload={f => { const r = new FileReader(); r.onload = e => setImageSrc(e.target.result); r.readAsDataURL(f); return false; }} showUploadList={false}>
+            <Button type="primary" icon={<UploadOutlined />} size="small">上传</Button>
+          </Upload>
+          <InputNumber addonBefore="宽" min={10} max={200} value={cols} onChange={setCols} size="small" style={isStandalone ? undefined : { width: 90 }} />
+          <InputNumber addonBefore="过滤" min={0} max={20} value={filterThreshold} onChange={setFilterThreshold} size="small" style={isStandalone ? undefined : { width: 90 }} />
+          <Button icon={<FilterOutlined />} onClick={filterColors} disabled={!data} size="small">{isStandalone && "优化"}</Button>
+          <Button icon={<SwapOutlined />} onClick={handleMirror} disabled={!data} size="small">{isStandalone && "镜像"}</Button>
+          <Button icon={<RetweetOutlined />} onClick={() => { if (data) { setReplaceSourceColor(Object.keys(data.colorCount)[0]); setIsReplaceModalVisible(true); } }} disabled={!data} size="small">{isStandalone && "替换"}</Button>
+
+          {isStandalone && (
+            <Button type="dashed" danger
+              icon={<DragOutlined />} onClick={onEnableAdvanced} size="small" style={{ marginLeft: 8, display: 'none' }}>
+              支持移动
+            </Button>
+          )}
+
+          {!isStandalone && (
+            <>
+              <Divider type="vertical" />
+              <Button icon={<UndoOutlined />} onClick={() => { commitFloatingPixelsSafe(); setSelectionBounds(null); setSelectionState('none'); setRedoStack(p => [data, ...p]); setData(history[history.length - 1]); setHistory(p => p.slice(0, -1)); }} disabled={!history.length} size="small" />
+              <Button icon={<RedoOutlined />} onClick={() => { commitFloatingPixelsSafe(); setSelectionBounds(null); setSelectionState('none'); setHistory(p => [...p, data]); setData(redoStack[0]); setRedoStack(p => p.slice(1)); }} disabled={!redoStack.length} size="small" />
+              <Divider type="vertical" />
+              <Button icon={<CopyOutlined />} onClick={handleCopy} disabled={!data} size="small">复制</Button>
+              <Button icon={<SnippetsOutlined />} onClick={handlePaste} disabled={!data || !clipboard} size="small">粘贴</Button>
+            </>
+          )}
+
+          <Button type="primary" ghost icon={<DownloadOutlined />} onClick={saveImage} disabled={!data} size="small">导出</Button>
+        </Space>
+
+        {isStandalone && (
+          <>
+            <Divider style={{ margin: '6px 0' }} />
+            <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+              <Space wrap size={2}>
+                <Radio.Group value={globalTool} onChange={e => setGlobalTool(e.target.value)} buttonStyle="solid" size="small">
+                  <Radio.Button value="pen"><EditOutlined /> 画笔</Radio.Button>
+                  <Radio.Button value="bucket"><BgColorsOutlined /> 填充</Radio.Button>
+                  <Radio.Button value="dropper"><FormatPainterOutlined /> 吸管</Radio.Button>
+                </Radio.Group>
+                <Button type={isHighlightMode ? "primary" : "default"} icon={<EyeOutlined />} onClick={() => setIsHighlightMode(!isHighlightMode)} danger={isHighlightMode} size="small">
+                  {isHighlightMode ? "定位中" : "定位"}
+                </Button>
+                <Button icon={<UndoOutlined />} onClick={() => { setRedoStack(p => [data, ...p]); setData(history[history.length - 1]); setHistory(p => p.slice(0, -1)); }} disabled={!history.length} size="small" />
+                <Button icon={<RedoOutlined />} onClick={() => { setHistory(p => [...p, data]); setData(redoStack[0]); setRedoStack(p => p.slice(1)); }} disabled={!redoStack.length} size="small" />
+              </Space>
+
+              <Space size={2} align="center">
+                <ZoomOutOutlined style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.max(0.3, z - 0.1))} />
+                <Slider min={0.3} max={2} step={0.1} value={zoomLevel} onChange={setZoomLevel} style={{ width: 60 }} />
+                <ZoomInOutlined style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.min(2, z + 0.1))} />
+                <div style={{ width: 20, height: 20, background: colorMap[globalSelectedColor], border: '1px solid #ddd', borderRadius: 2 }} />
+                <Select showSearch value={globalSelectedColor} onChange={setGlobalSelectedColor} style={{ width: 80 }} size="small" filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}>
+                  {sortedKeys.map(k => <Option key={k} value={k} label={k}><Space><div style={{ width: 10, height: 10, border: '1px solid #ddd', background: colorMap[k] }} />{k}</Space></Option>)}
+                </Select>
+              </Space>
+            </div>
+          </>
+        )}
+
+        {!isStandalone && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+            <span style={{ fontSize: 12, color: '#666' }}>缩放:</span>
+            <ZoomOutOutlined style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.max(0.3, z - 0.1))} />
+            <Slider min={0.3} max={2} step={0.1} value={zoomLevel} onChange={setZoomLevel} style={{ width: 80, margin: '0 8px' }} />
+            <ZoomInOutlined style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.min(2, z + 0.1))} />
+          </div>
+        )}
+      </div>
+
+      <div className={imageSrc ? "canvas-container" : "canvas-container noData"}
+        style={isStandalone
+          ? { flex: 1, minHeight: 200, overflow: 'auto', display: 'flex', position: 'relative', border: '1px solid #f0f0f0', background: '#888' }
+          : { flex: 1, minHeight: 200, overflow: 'auto', display: 'flex', position: 'relative', border: '1px solid #f0f0f0', background: '#888', borderRadius: 4 }}>
+        <Spin spinning={loading} style={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {data ? (
+            <div style={{ margin: 'auto' }}>
+              <canvas
+                ref={canvasRef}
+                style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top left', transition: 'transform 0.1s', boxShadow: '0 0 10px rgba(0,0,0,0.1)', display: 'block', touchAction: 'none' }}
+                onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
+                onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
+              />
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.8)', gap: 12, margin: 'auto' }}>
+              <PictureOutlined style={{ fontSize: 64, opacity: 0.5 }} />
+              <span style={{ fontSize: 16 }}>{isStandalone ? '暂无图纸' : `图纸区域 ${panelId} 暂无数据`}</span>
+              <span style={{ fontSize: 12, opacity: 0.6 }}>请点击上方上传图片</span>
+            </div>
+          )}
+        </Spin>
+      </div>
+
+      {data && <div className="color-palette-area" style={{ flex: '0 0 auto', marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: isStandalone ? 150 : 120, overflowY: 'auto', paddingRight: 4 }}>
+        {Object.entries(data.colorCount).sort((a, b) => b[1] - a[1]).map(([k, c]) => {
+          const pct = (c / data.totalPixels) * 100;
+          const percentage = pct < 0.1 ? pct.toFixed(3) : pct.toFixed(1);
+          return (
+            <Tooltip key={k} title={`${k}: ${c}颗 (${percentage}%) - 点击定位`}>
+              <div
+                onClick={() => { setGlobalSelectedColor(k); setIsHighlightMode(true); }}
+                style={{
+                  width: isStandalone ? 42 : 40, height: isStandalone ? 75 : 65, border: globalSelectedColor === k ? '2px solid #1890ff' : '1px solid #ddd',
+                  borderRadius: 4, overflow: 'hidden', display: 'flex', flexDirection: 'column', cursor: 'pointer', background: '#fff',
+                  opacity: (isHighlightMode && globalSelectedColor !== k) ? 0.3 : 1, transition: 'all 0.2s'
+                }}
+              >
+                <div style={{ flex: 1, background: colorMap[k], width: '100%' }} />
+                <div style={{ height: isStandalone ? 48 : 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#fff', borderTop: '1px solid #eee' }}>
+                  <span style={{ fontWeight: 'bold', color: '#333', fontSize: isStandalone ? 11 : 10 }}>{k}</span>
+                  <span style={{ color: '#666', fontSize: isStandalone ? 10 : 9 }}>×{c}</span>
+                  {isStandalone && <span style={{ color: '#999', fontSize: 9, marginTop: 2 }}>{percentage}%</span>}
+                </div>
+              </div>
+            </Tooltip>
+          );
+        })}
+      </div>}
+
+      <Modal title="替换色号" open={isReplaceModalVisible} onOk={executeReplaceColor} onCancel={() => setIsReplaceModalVisible(false)} width={320} destroyOnClose>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0' }}>
+          <div>
+            <div style={{ marginBottom: 6, fontSize: 12, color: '#666' }}>原色号</div>
+            <Select showSearch value={replaceSourceColor} onChange={setReplaceSourceColor} style={{ width: 110 }}>
+              {data && Object.keys(data.colorCount).map(k => <Option key={k} value={k}><Space><div style={{ width: 10, height: 10, background: colorMap[k] }} />{k}</Space></Option>)}
+            </Select>
+          </div>
+          <SwapRightOutlined style={{ fontSize: 24, color: '#bfbfbf', marginTop: 20 }} />
+          <div>
+            <div style={{ marginBottom: 6, fontSize: 12, color: '#666' }}>新色号</div>
+            <Select showSearch value={replaceTargetColor} onChange={setReplaceTargetColor} style={{ width: 110 }}>
+              {sortedKeys.map(k => <Option key={k} value={k}><Space><div style={{ width: 10, height: 10, background: colorMap[k] }} />{k}</Space></Option>)}
+            </Select>
+          </div>
+        </div>
+      </Modal>
+    </Card>
+  );
+};
+
+const App = () => {
+  const [isAdvancedMode, setIsAdvancedMode] = useState(false);
+
+  const [globalTool, setGlobalTool] = useState('pen');
+  const [globalSelectedColor, setGlobalSelectedColor] = useState('A1');
+  const [isHighlightMode, setIsHighlightMode] = useState(false);
+  const [clipboard, setClipboard] = useState(null);
 
   const sortedKeys = useMemo(() => Object.keys(colorMap).sort((a, b) => {
     const ma = a.match(/^([A-Z]+)(\d+)$/), mb = b.match(/^([A-Z]+)(\d+)$/);
@@ -503,207 +734,98 @@ const App = () => {
     return a.localeCompare(b);
   }), []);
 
+  const handleEnableAdvanced = () => {
+    setIsAdvancedMode(true);
+    message.success('已开启移动模式：支持区域框选、拖拽，并增加副图纸区辅助');
+  };
+
+  const handleDisableAdvanced = () => {
+    setIsAdvancedMode(false);
+    setGlobalTool('pen');
+    setClipboard(null);
+    message.info('已返回经典单图纸模式');
+  };
+
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f0f2f5', padding: 0 }}>
-      <Card
-        title={<span><FormatPainterOutlined />拼豆图纸生成器</span>}
-        className="pixel-editor"
-        style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-        bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', overflow: 'hidden' }}
-      >
-        <div style={{ flex: '0 0 auto' }}>
-          <Space wrap className="control-panel" style={{ width: '100%', gap: 4 }}>
-            <Upload accept="image/*" beforeUpload={f => { const r = new FileReader(); r.onload = e => setImageSrc(e.target.result); r.readAsDataURL(f); return false; }} showUploadList={false}>
-              <Button type="primary" icon={<UploadOutlined />} size="small">上传</Button>
-            </Upload>
-            <InputNumber addonBefore="宽" min={10} max={200} value={cols} onChange={setCols} size="small" />
-            <InputNumber addonBefore="过滤" min={0} max={20} value={filterThreshold} onChange={setFilterThreshold} size="small" />
-            <Button icon={<FilterOutlined />} onClick={filterColors} disabled={!data} size="small">优化</Button>
-            <Button icon={<SwapOutlined />} onClick={handleMirror} disabled={!data} size="small">镜像</Button>
-            {/* 新增的全局替换按钮 */}
-            <Button icon={<RetweetOutlined />} onClick={openReplaceModal} disabled={!data} size="small">替换</Button>
-            <Button type="primary" ghost icon={<DownloadOutlined />} onClick={saveImage} disabled={!data} size="small">导出</Button>
+      {isAdvancedMode && (
+        <div style={{ background: '#fff', padding: '8px 16px', borderBottom: '1px solid #ddd', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 16, flex: '0 0 auto', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', zIndex: 10 }}>
+          <Button type="primary" danger icon={<LeftOutlined />} onClick={handleDisableAdvanced} size="small" style={{ marginRight: 8 }}>
+            退出移动模式
+          </Button>
+          <Divider type="vertical" />
+
+          <Space wrap size={8}>
+            <span style={{ fontSize: 13, color: '#666', fontWeight: 'bold' }}>全局工具:</span>
+            <Radio.Group value={globalTool} onChange={e => setGlobalTool(e.target.value)} buttonStyle="solid" size="small">
+              <Radio.Button value="pen"><EditOutlined /> 画笔</Radio.Button>
+              <Radio.Button value="bucket"><BgColorsOutlined /> 填充</Radio.Button>
+              <Radio.Button value="dropper"><FormatPainterOutlined /> 吸色</Radio.Button>
+              <Radio.Button value="select"><DragOutlined /> 框选/移动</Radio.Button>
+            </Radio.Group>
           </Space>
 
-          <Divider style={{ margin: '6px 0' }} />
+          <Divider type="vertical" />
 
-          <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-            <Space wrap size={2}>
-              <Radio.Group value={currentTool} onChange={e => setCurrentTool(e.target.value)} buttonStyle="solid" size="small">
-                <Radio.Button value="pen"><EditOutlined /> 画笔</Radio.Button>
-                <Radio.Button value="bucket"><BgColorsOutlined /> 填充</Radio.Button>
-                <Radio.Button value="dropper"><FormatPainterOutlined /> 吸管</Radio.Button>
-              </Radio.Group>
+          <Space size={8} align="center">
+            <span style={{ fontSize: 13, color: '#666', fontWeight: 'bold' }}>全局定位:</span>
+            <div style={{ width: 24, height: 24, background: colorMap[globalSelectedColor], border: '2px solid #ddd', borderRadius: 4 }} />
+            <Select showSearch value={globalSelectedColor} onChange={setGlobalSelectedColor} style={{ width: 90 }} size="small" filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}>
+              {sortedKeys.map(k => <Option key={k} value={k} label={k}><Space><div style={{ width: 10, height: 10, border: '1px solid #ddd', background: colorMap[k] }} />{k}</Space></Option>)}
+            </Select>
+            <Button type={isHighlightMode ? "primary" : "default"} icon={<EyeOutlined />} onClick={() => setIsHighlightMode(!isHighlightMode)} danger={isHighlightMode} size="small" style={{ marginLeft: 8 }}>
+              {isHighlightMode ? "取消高亮" : "高亮"}
+            </Button>
+          </Space>
 
-              <Button
-                type={isHighlightMode ? "primary" : "default"}
-                icon={<EyeOutlined />}
-                onClick={() => setIsHighlightMode(!isHighlightMode)}
-                danger={isHighlightMode}
-                size="small"
-              >
-                {isHighlightMode ? "定位中" : "定位"}
-              </Button>
-
-              <Button icon={<UndoOutlined />} onClick={handleUndo} disabled={!history.length} size="small" />
-              <Button icon={<RedoOutlined />} onClick={handleRedo} disabled={!redoStack.length} size="small" />
-            </Space>
-
-            <Space size={2} align="center">
-              <ZoomOutOutlined style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.max(0.3, z - 0.1))} />
-              <Slider min={0.3} max={2} step={0.1} value={zoomLevel} onChange={setZoomLevel} style={{ width: 60 }} />
-              <ZoomInOutlined style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.min(2, z + 0.1))} />
-
-              <div style={{ width: 20, height: 20, background: colorMap[selectedColor], border: '1px solid #ddd', borderRadius: 2 }} />
-              <Select showSearch value={selectedColor} onChange={setSelectedColor} style={{ width: 80 }} size="small" filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}>
-                {sortedKeys.map(k => <Option key={k} value={k} label={k}><Space><div style={{ width: 10, height: 10, border: '1px solid #ddd', background: colorMap[k] }} />{k}</Space></Option>)}
-              </Select>
-            </Space>
-          </div>
+          {clipboard && (
+            <div style={{ marginLeft: 'auto', fontSize: 12, color: '#52c41a', background: '#f6ffed', padding: '4px 8px', border: '1px solid #b7eb8f', borderRadius: 4 }}>
+              <SnippetsOutlined /> 已复制区域 ({clipboard.rows}x{clipboard.cols})
+            </div>
+          )}
         </div>
+      )}
 
-        <div className={imageSrc ? "canvas-container" : "canvas-container noData"}
-          style={{ flex: 1, minHeight: 200, overflow: 'auto', display: 'flex', position: 'relative', border: '1px solid #f0f0f0', background: '#888' }}>
-          <Spin spinning={loading} style={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            {data ? (
-              <div style={{ margin: 'auto' }}>
-                <canvas
-                  ref={canvasRef}
-                  style={{
-                    transform: `scale(${zoomLevel})`,
-                    transformOrigin: 'top left',
-                    transition: 'transform 0.1s',
-                    boxShadow: '0 0 10px rgba(0,0,0,0.1)',
-                    display: 'block',
-                    touchAction: 'none'
-                  }}
-                  onMouseDown={e => { setIsDrawing(true); handleCanvasAction(e, true); }}
-                  onMouseMove={e => isDrawing && handleCanvasAction(e, false)}
-                  onMouseUp={() => setIsDrawing(false)}
-                  onMouseLeave={() => setIsDrawing(false)}
-                  onTouchStart={handleTouchStart}
-                  onTouchMove={handleTouchMove}
-                  onTouchEnd={handleTouchEnd}
-                />
-              </div>
-            ) : (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'rgba(255,255,255,0.8)',
-                gap: 12,
-                margin: 'auto'
-              }}>
-                <PictureOutlined style={{ fontSize: 64, opacity: 0.5 }} />
-                <span style={{ fontSize: 16 }}>暂无图纸</span>
-                <span style={{ fontSize: 12, opacity: 0.6 }}>请点击左上角上传图片生成</span>
-              </div>
-            )}
-          </Spin>
+      {/* --- 完美兼容：单图模式不嵌套额外 div，直接暴露 CanvasPanel 以确保 App.css 的完全生效 --- */}
+      {!isAdvancedMode ? (
+        <CanvasPanel
+          panelId={1}
+          isStandalone={true}
+          onEnableAdvanced={handleEnableAdvanced}
+          globalTool={globalTool} setGlobalTool={setGlobalTool}
+          globalSelectedColor={globalSelectedColor} setGlobalSelectedColor={setGlobalSelectedColor}
+          isHighlightMode={isHighlightMode} setIsHighlightMode={setIsHighlightMode}
+          clipboard={clipboard} setClipboard={setClipboard}
+          sortedKeys={sortedKeys}
+        />
+      ) : (
+        <div style={{ display: 'flex', flexWrap: 'wrap', flex: 1, overflow: 'hidden', padding: 4 }}>
+          <CanvasPanel
+            panelId={1}
+            isStandalone={false}
+            onEnableAdvanced={handleEnableAdvanced}
+            globalTool={globalTool} setGlobalTool={setGlobalTool}
+            globalSelectedColor={globalSelectedColor} setGlobalSelectedColor={setGlobalSelectedColor}
+            isHighlightMode={isHighlightMode} setIsHighlightMode={setIsHighlightMode}
+            clipboard={clipboard} setClipboard={setClipboard}
+            sortedKeys={sortedKeys}
+          />
+          <CanvasPanel
+            panelId={2}
+            isStandalone={false}
+            globalTool={globalTool} setGlobalTool={setGlobalTool}
+            globalSelectedColor={globalSelectedColor} setGlobalSelectedColor={setGlobalSelectedColor}
+            isHighlightMode={isHighlightMode} setIsHighlightMode={setIsHighlightMode}
+            clipboard={clipboard} setClipboard={setClipboard}
+            sortedKeys={sortedKeys}
+          />
         </div>
+      )}
 
-        {data && <div className="color-palette-area" style={{ flex: '0 0 auto', marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 150, overflowY: 'auto', paddingRight: 4 }}>
-          {Object.entries(data.colorCount).sort((a, b) => b[1] - a[1]).map(([k, c]) => {
-            const pct = (c / data.totalPixels) * 100;
-            const percentage = pct < 0.1 ? pct.toFixed(3) : pct.toFixed(1);
-            return (
-              <Tooltip key={k} title={`${k}: ${c}颗 (${percentage}%) - 点击定位`}>
-                <div
-                  onClick={() => {
-                    setSelectedColor(k);
-                    setIsHighlightMode(true);
-                  }}
-                  className="color-palette-item"
-                  style={{
-                    width: 42, height: 75,
-                    border: selectedColor === k ? '2px solid #1890ff' : '1px solid #ddd',
-                    borderRadius: 4, overflow: 'hidden', display: 'flex', flexDirection: 'column',
-                    cursor: 'pointer', background: '#fff',
-                    opacity: (isHighlightMode && selectedColor !== k) ? 0.3 : 1,
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  <div style={{ flex: 1, background: colorMap[k], width: '100%' }} />
-                  <div style={{ height: 48, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontSize: 9, background: '#fff', borderTop: '1px solid #eee' }}>
-                    <span style={{ fontWeight: 'bold', color: '#333', fontSize: 11 }}>{k}</span>
-                    <span style={{ color: '#666', fontSize: 10, fontWeight: 500 }}>×{c}</span>
-                    <span style={{ color: '#999', fontSize: 9, marginTop: 2 }}>{percentage}%</span>
-                  </div>
-                </div>
-              </Tooltip>
-            );
-          })}
-        </div>}
-      </Card>
-
-      {/* 悬浮版权标 */}
-      <div className="copyright-badge" style={{
-        position: 'fixed', bottom: '10px', right: '10px', zIndex: 9999, padding: '6px 12px',
-        background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(4px)', borderRadius: '6px',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.1)', fontSize: '12px', color: '#666', textAlign: 'right', pointerEvents: 'auto',
-      }}>
+      <div className="copyright-badge" style={{ position: 'fixed', bottom: '10px', right: '10px', zIndex: 9999, padding: '6px 12px', background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(4px)', borderRadius: '6px', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', fontSize: '12px', color: '#666', textAlign: 'right', pointerEvents: 'auto' }}>
         <div>Made with ❤️ by <span style={{ color: '#ff4d4f', fontWeight: 'bold', margin: '0 4px' }}>xhs：士多啤梨(拼豆发疯版)</span></div>
         <div style={{ transform: 'scale(0.9)', transformOrigin: 'right center', opacity: 0.8 }}>xhs号：95410734438</div>
       </div>
-
-      {/* 新增的色号替换弹窗 */}
-      <Modal
-        title={<span><RetweetOutlined /> 全局色号替换</span>}
-        open={isReplaceModalVisible}
-        onOk={executeReplaceColor}
-        onCancel={() => setIsReplaceModalVisible(false)}
-        okText="确认替换"
-        cancelText="取消"
-        width={320}
-        destroyOnClose
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0' }}>
-          <div>
-            <div style={{ marginBottom: 6, fontSize: 12, color: '#666' }}>原色号 (当前图纸中)</div>
-            <Select
-              showSearch
-              value={replaceSourceColor}
-              onChange={setReplaceSourceColor}
-              style={{ width: 110 }}
-              filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-            >
-              {data && Object.keys(data.colorCount).map(k => (
-                <Option key={k} value={k} label={k}>
-                  <Space>
-                    <div style={{ width: 12, height: 12, background: colorMap[k], border: '1px solid #ddd', borderRadius: 2 }} />
-                    {k}
-                  </Space>
-                </Option>
-              ))}
-            </Select>
-          </div>
-
-          <SwapRightOutlined style={{ fontSize: 24, color: '#bfbfbf', marginTop: 20 }} />
-
-          <div>
-            <div style={{ marginBottom: 6, fontSize: 12, color: '#666' }}>新色号 (目标替换为)</div>
-            <Select
-              showSearch
-              value={replaceTargetColor}
-              onChange={setReplaceTargetColor}
-              style={{ width: 110 }}
-              filterOption={(input, option) => (option?.label ?? '').toLowerCase().includes(input.toLowerCase())}
-            >
-              {sortedKeys.map(k => (
-                <Option key={k} value={k} label={k}>
-                  <Space>
-                    <div style={{ width: 12, height: 12, background: colorMap[k], border: '1px solid #ddd', borderRadius: 2 }} />
-                    {k}
-                  </Space>
-                </Option>
-              ))}
-            </Select>
-          </div>
-        </div>
-      </Modal>
-
       <Analytics />
     </div>
   );
