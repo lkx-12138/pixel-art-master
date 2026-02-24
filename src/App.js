@@ -582,7 +582,7 @@ const CanvasPanel = ({
           <Upload accept="image/*" beforeUpload={f => { const r = new FileReader(); r.onload = e => setImageSrc(e.target.result); r.readAsDataURL(f); return false; }} showUploadList={false}>
             <Button type="primary" icon={<UploadOutlined />} size="small">上传</Button>
           </Upload>
-          <InputNumber addonBefore="宽" min={10} max={200} value={cols} onChange={setCols} size="small" style={isStandalone ? undefined : { width: 90 }} />
+          <InputNumber addonBefore="宽" min={1} max={300} value={cols} onChange={setCols} size="small" style={isStandalone ? undefined : { width: 90 }} />
           <InputNumber addonBefore="过滤" min={0} max={20} value={filterThreshold} onChange={setFilterThreshold} size="small" style={isStandalone ? undefined : { width: 90 }} />
           <Button icon={<FilterOutlined />} onClick={filterColors} disabled={!data} size="small">{isStandalone && "优化"}</Button>
           <Button icon={<SwapOutlined />} onClick={handleMirror} disabled={!data} size="small">{isStandalone && "镜像"}</Button>
