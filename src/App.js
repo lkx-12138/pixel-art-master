@@ -10,7 +10,7 @@ import {
   FormatPainterOutlined, EyeOutlined, SwapOutlined,
   PictureOutlined, RetweetOutlined, SwapRightOutlined,
   DragOutlined, CopyOutlined, SnippetsOutlined,
-  LeftOutlined
+  LeftOutlined, QuestionCircleOutlined
 } from '@ant-design/icons';
 import { Analytics } from '@vercel/analytics/react';
 import './App.css';
@@ -46,6 +46,17 @@ const findClosestColorKey = (targetRgb) => {
   return closestKey;
 };
 
+// 查找最相似色号（排除指定的色号列表）
+const findClosestColorKeyExclude = (targetRgb, excludeKeys = []) => {
+  let minDist = Infinity; let closestKey = null;
+  for (const [key, rgb] of Object.entries(colorMapRgb)) {
+    if (key === 'H1' || excludeKeys.includes(key)) continue;
+    const dist = colorDistance(targetRgb, rgb);
+    if (dist < minDist) { minDist = dist; closestKey = key; }
+  }
+  return closestKey;
+};
+
 const calculateBrightness = (rgb) => (rgb.r * 0.299 + rgb.g * 0.587 + rgb.b * 0.114) / 255;
 
 
@@ -73,6 +84,9 @@ const CanvasPanel = ({
   const [isReplaceModalVisible, setIsReplaceModalVisible] = useState(false);
   const [replaceSourceColor, setReplaceSourceColor] = useState('');
   const [replaceTargetColor, setReplaceTargetColor] = useState('A1');
+
+  const [isSimilarModalVisible, setIsSimilarModalVisible] = useState(false);
+  const [missingColors, setMissingColors] = useState([]);
 
   const [selectionBounds, setSelectionBounds] = useState(null);
   const [floatingPixels, setFloatingPixels] = useState(null);
@@ -419,6 +433,32 @@ const CanvasPanel = ({
     message.success(`已替换`); setIsReplaceModalVisible(false);
   };
 
+  // 计算缺失色号的相似替代色映射
+  const similarColorMap = useMemo(() => {
+    const map = {};
+    missingColors.forEach(colorKey => {
+      const similar = findClosestColorKeyExclude(colorMapRgb[colorKey], missingColors);
+      map[colorKey] = similar;
+    });
+    return map;
+  }, [missingColors]);
+
+  // 批量替换缺失色号
+  const executeBatchReplace = () => {
+    if (!data || missingColors.length === 0) return;
+    saveHistory();
+    const newPixels = data.pixelData.map(p => {
+      if (missingColors.includes(p.colorKey)) {
+        return { ...p, colorKey: similarColorMap[p.colorKey] || p.colorKey };
+      }
+      return p;
+    });
+    updateData(newPixels);
+    message.success(`已替换 ${missingColors.length} 个色号`);
+    setIsSimilarModalVisible(false);
+    setMissingColors([]);
+  };
+
   const saveImage = () => {
     if (!canvasRef.current || !data) return;
 
@@ -622,6 +662,9 @@ const CanvasPanel = ({
                 <Button type={isHighlightMode ? "primary" : "default"} icon={<EyeOutlined />} onClick={() => setIsHighlightMode(!isHighlightMode)} danger={isHighlightMode} size="small">
                   {isHighlightMode ? "定位中" : "定位"}
                 </Button>
+                <Tooltip title="缺少某色号拼豆？点击查找相似替代色">
+                  <Button icon={<QuestionCircleOutlined />} onClick={() => { if (data) { setMissingColors([]); setIsSimilarModalVisible(true); } }} disabled={!data} size="small">缺色</Button>
+                </Tooltip>
                 <Button icon={<UndoOutlined />} onClick={() => { setRedoStack(p => [data, ...p]); setData(history[history.length - 1]); setHistory(p => p.slice(0, -1)); }} disabled={!history.length} size="small" />
                 <Button icon={<RedoOutlined />} onClick={() => { setHistory(p => [...p, data]); setData(redoStack[0]); setRedoStack(p => p.slice(1)); }} disabled={!redoStack.length} size="small" />
               </Space>
@@ -715,6 +758,73 @@ const CanvasPanel = ({
             </Select>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        title={<span><QuestionCircleOutlined style={{ marginRight: 8, color: '#faad14' }} />相似色号查询</span>}
+        open={isSimilarModalVisible}
+        onOk={executeBatchReplace}
+        onCancel={() => { setIsSimilarModalVisible(false); setMissingColors([]); }}
+        width={500}
+        okText="确认替换"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <div style={{ marginBottom: 12, color: '#666', fontSize: 13 }}>
+          选择您缺少的色号，系统将自动匹配最相似的替代色：
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 8, fontWeight: 500 }}>选择缺失色号：</div>
+          <Select
+            mode="multiple"
+            style={{ width: '100%' }}
+            placeholder="请选择缺失的色号"
+            value={missingColors}
+            onChange={setMissingColors}
+            showSearch
+            filterOption={(input, option) => (option?.value ?? '').toLowerCase().includes(input.toLowerCase())}
+          >
+            {sortedKeys.filter(k => k !== 'H1').map(k => (
+              <Option key={k} value={k}>
+                <Space>
+                  <div style={{ width: 14, height: 14, background: colorMap[k], border: '1px solid #ddd', borderRadius: 2 }} />
+                  {k}{data && data.colorCount[k] ? ` (${data.colorCount[k]}颗)` : ''}
+                </Space>
+              </Option>
+            ))}
+          </Select>
+        </div>
+        {missingColors.length > 0 && (
+          <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ background: '#fafafa', padding: '10px 16px', fontWeight: 500, borderBottom: '1px solid #f0f0f0' }}>
+              替换方案
+            </div>
+            <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+              {missingColors.map(colorKey => {
+                const similar = similarColorMap[colorKey];
+                return (
+                  <div key={colorKey} style={{ display: 'flex', alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid #f0f0f0' }}>
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 24, height: 24, background: colorMap[colorKey], border: '1px solid #ddd', borderRadius: 4 }} />
+                      <span style={{ fontWeight: 500 }}>{colorKey}</span>
+                      <span style={{ color: '#999', fontSize: 12 }}>({data.colorCount[colorKey]}颗)</span>
+                    </div>
+                    <SwapRightOutlined style={{ fontSize: 18, color: '#bfbfbf', margin: '0 12px' }} />
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 24, height: 24, background: similar ? colorMap[similar] : '#fff', border: '1px solid #ddd', borderRadius: 4 }} />
+                      <span style={{ fontWeight: 500, color: similar ? '#52c41a' : '#999' }}>{similar || '无替代'}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {missingColors.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 40, color: '#bfbfbf' }}>
+            请在上方选择缺失的色号
+          </div>
+        )}
       </Modal>
     </Card>
   );
