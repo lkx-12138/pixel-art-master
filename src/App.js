@@ -703,7 +703,7 @@ const CanvasPanel = ({
 
   // --- 彻底还原样式：100% 退回最初的状态 ---
   const cardStyle = isStandalone
-    ? { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+    ? { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }
     : { flex: '1 1 45%', minWidth: 360, display: 'flex', flexDirection: 'column', margin: '4px', border: '1px solid #d9d9d9', borderRadius: '8px' };
 
   return (
@@ -711,7 +711,7 @@ const CanvasPanel = ({
       title={isStandalone ? <span><FormatPainterOutlined />拼豆图纸生成器</span> : `图纸区域 ${panelId}`}
       className={isStandalone ? "pixel-editor" : ""}
       style={cardStyle}
-      bodyStyle={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', overflow: 'hidden' }}
+      bodyStyle={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', padding: '12px', overflow: 'hidden' }}
     >
       <div style={isStandalone ? { flex: '0 0 auto' } : { flex: '0 0 auto', marginBottom: 8 }}>
         <Space wrap className="control-panel" style={{ width: '100%', gap: 4 }}>
