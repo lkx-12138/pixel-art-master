@@ -748,7 +748,7 @@ const CanvasPanel = ({
         {isStandalone && (
           <>
             <Divider style={{ margin: '6px 0' }} />
-            <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
               <Space wrap size={2}>
                 <Radio.Group value={globalTool} onChange={e => setGlobalTool(e.target.value)} buttonStyle="solid" size="small">
                   <Radio.Button value="pen"><EditOutlined /> 画笔</Radio.Button>
