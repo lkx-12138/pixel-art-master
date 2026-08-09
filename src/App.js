@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Upload, Button, InputNumber, message, Card,
-  Divider, Tooltip, Select, Space, Radio, Spin, Slider, Modal
+  Divider, Tooltip, Select, Space, Radio, Spin, Slider, Modal, Dropdown
 } from 'antd';
 import {
   UploadOutlined, DownloadOutlined, FilterOutlined,
@@ -10,7 +10,10 @@ import {
   FormatPainterOutlined, EyeOutlined, SwapOutlined,
   PictureOutlined, RetweetOutlined, SwapRightOutlined,
   DragOutlined, CopyOutlined, SnippetsOutlined,
-  LeftOutlined, QuestionCircleOutlined
+  LeftOutlined, QuestionCircleOutlined,
+  ArrowUpOutlined, ArrowDownOutlined,
+  ArrowLeftOutlined, ArrowRightOutlined,
+  CaretDownOutlined
 } from '@ant-design/icons';
 import { Analytics } from '@vercel/analytics/react';
 import './App.css';
@@ -605,6 +608,99 @@ const CanvasPanel = ({
     }
   };
 
+  // === 行列增删操作 ===
+  const addRow = (direction) => {
+    if (!data) return;
+    commitFloatingPixelsSafe();
+    saveHistory();
+    const config = data.canvasConfig;
+    const isTop = direction === 'top';
+    const newRowIndex = isTop ? 0 : config.rows;
+    const newPixelData = data.pixelData.map(p => ({ ...p, row: isTop ? p.row + 1 : p.row }));
+    for (let c = 0; c < config.cols; c++) {
+      newPixelData.push({ row: newRowIndex, col: c, colorKey: 'H2' });
+    }
+    const newRows = config.rows + 1;
+    const counts = {};
+    newPixelData.forEach(p => { counts[p.colorKey] = (counts[p.colorKey] || 0) + 1; });
+    setData({
+      pixelData: newPixelData,
+      colorCount: counts,
+      totalPixels: newRows * config.cols,
+      canvasConfig: { ...config, rows: newRows, height: config.topMargin + newRows * config.cellSize + 40 }
+    });
+    message.success(`已在${isTop ? '上方' : '下方'}新增一行`);
+  };
+
+  const addCol = (direction) => {
+    if (!data) return;
+    commitFloatingPixelsSafe();
+    saveHistory();
+    const config = data.canvasConfig;
+    const isLeft = direction === 'left';
+    const newColIndex = isLeft ? 0 : config.cols;
+    const newPixelData = data.pixelData.map(p => ({ ...p, col: isLeft ? p.col + 1 : p.col }));
+    for (let r = 0; r < config.rows; r++) {
+      newPixelData.push({ row: r, col: newColIndex, colorKey: 'H2' });
+    }
+    const newCols = config.cols + 1;
+    const counts = {};
+    newPixelData.forEach(p => { counts[p.colorKey] = (counts[p.colorKey] || 0) + 1; });
+    setData({
+      pixelData: newPixelData,
+      colorCount: counts,
+      totalPixels: config.rows * newCols,
+      canvasConfig: { ...config, cols: newCols, width: config.leftMargin + newCols * config.cellSize + 20 }
+    });
+    message.success(`已在${isLeft ? '左侧' : '右侧'}新增一列`);
+  };
+
+  const deleteRow = (direction) => {
+    if (!data) return;
+    const config = data.canvasConfig;
+    if (config.rows <= 1) { message.warning('至少需要保留一行'); return; }
+    commitFloatingPixelsSafe();
+    saveHistory();
+    const isTop = direction === 'top';
+    const targetRow = isTop ? 0 : config.rows - 1;
+    const newPixelData = data.pixelData
+      .filter(p => p.row !== targetRow)
+      .map(p => ({ ...p, row: isTop ? p.row - 1 : p.row }));
+    const newRows = config.rows - 1;
+    const counts = {};
+    newPixelData.forEach(p => { counts[p.colorKey] = (counts[p.colorKey] || 0) + 1; });
+    setData({
+      pixelData: newPixelData,
+      colorCount: counts,
+      totalPixels: newRows * config.cols,
+      canvasConfig: { ...config, rows: newRows, height: config.topMargin + newRows * config.cellSize + 40 }
+    });
+    message.success(`已删除${isTop ? '顶部' : '底部'}一行`);
+  };
+
+  const deleteCol = (direction) => {
+    if (!data) return;
+    const config = data.canvasConfig;
+    if (config.cols <= 1) { message.warning('至少需要保留一列'); return; }
+    commitFloatingPixelsSafe();
+    saveHistory();
+    const isLeft = direction === 'left';
+    const targetCol = isLeft ? 0 : config.cols - 1;
+    const newPixelData = data.pixelData
+      .filter(p => p.col !== targetCol)
+      .map(p => ({ ...p, col: isLeft ? p.col - 1 : p.col }));
+    const newCols = config.cols - 1;
+    const counts = {};
+    newPixelData.forEach(p => { counts[p.colorKey] = (counts[p.colorKey] || 0) + 1; });
+    setData({
+      pixelData: newPixelData,
+      colorCount: counts,
+      totalPixels: config.rows * newCols,
+      canvasConfig: { ...config, cols: newCols, width: config.leftMargin + newCols * config.cellSize + 20 }
+    });
+    message.success(`已删除${isLeft ? '左侧' : '右侧'}一列`);
+  };
+
   // --- 彻底还原样式：100% 退回最初的状态 ---
   const cardStyle = isStandalone
     ? { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }
@@ -670,6 +766,32 @@ const CanvasPanel = ({
               </Space>
 
               <Space size={2} align="center">
+                <Space.Compact>
+                  <Button size="small" onClick={() => addRow('bottom')} disabled={!data}>下方加行</Button>
+                  <Dropdown
+                    disabled={!data}
+                    trigger={['click']}
+                    menu={{
+                      items: [
+                        { type: 'group', label: '行操作', children: [
+                          { key: 'row-add-top',    icon: <ArrowUpOutlined />, label: '上方新增一行', onClick: () => addRow('top') },
+                          { key: 'row-add-bottom', icon: <ArrowDownOutlined />, label: '下方新增一行', onClick: () => addRow('bottom') },
+                          { key: 'row-del-top',    icon: <ArrowUpOutlined />, label: '上方删除一行', onClick: () => deleteRow('top'), disabled: (data?.canvasConfig?.rows ?? 1) <= 1 },
+                          { key: 'row-del-bottom', icon: <ArrowDownOutlined />, label: '下方删除一行', onClick: () => deleteRow('bottom'), disabled: (data?.canvasConfig?.rows ?? 1) <= 1 },
+                        ]},
+                        { type: 'group', label: '列操作', children: [
+                          { key: 'col-add-left',   icon: <ArrowLeftOutlined />, label: '左侧新增一列', onClick: () => addCol('left') },
+                          { key: 'col-add-right',  icon: <ArrowRightOutlined />, label: '右侧新增一列', onClick: () => addCol('right') },
+                          { key: 'col-del-left',   icon: <ArrowLeftOutlined />, label: '左侧删除一列', onClick: () => deleteCol('left'), disabled: (data?.canvasConfig?.cols ?? 1) <= 1 },
+                          { key: 'col-del-right',  icon: <ArrowRightOutlined />, label: '右侧删除一列', onClick: () => deleteCol('right'), disabled: (data?.canvasConfig?.cols ?? 1) <= 1 },
+                        ]},
+                      ]
+                    }}
+                  >
+                    <Button size="small" icon={<CaretDownOutlined />} />
+                  </Dropdown>
+                </Space.Compact>
+                <Divider type="vertical" style={{ margin: 0 }} />
                 <ZoomOutOutlined style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.max(0.3, z - 0.1))} />
                 <Slider min={0.3} max={2} step={0.1} value={zoomLevel} onChange={setZoomLevel} style={{ width: 60 }} />
                 <ZoomInOutlined style={{ fontSize: 12, cursor: 'pointer' }} onClick={() => setZoomLevel(z => Math.min(2, z + 0.1))} />
@@ -694,7 +816,7 @@ const CanvasPanel = ({
 
       <div className={imageSrc ? "canvas-container" : "canvas-container noData"}
         style={isStandalone
-          ? { flex: 1, minHeight: 200, overflow: 'auto', display: 'flex', position: 'relative', border: '1px solid #f0f0f0', background: '#888' }
+          ? { flex: 1, minWidth: 0, minHeight: 200, overflow: 'auto', display: 'flex', position: 'relative', border: '1px solid #f0f0f0', background: '#888' }
           : { flex: 1, minHeight: 200, overflow: 'auto', display: 'flex', position: 'relative', border: '1px solid #f0f0f0', background: '#888', borderRadius: 4 }}>
         <Spin spinning={loading} style={{ width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           {data ? (
